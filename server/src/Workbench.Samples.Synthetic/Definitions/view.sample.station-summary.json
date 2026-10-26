@@ -1,0 +1,29 @@
+{
+  "documentType": "view",
+  "schemaVersion": "1.0.0",
+  "definitionId": "view.sample.station-summary",
+  "version": "1.0.0",
+  "title": "Station summary",
+  "layout": { "wideColumns": 1, "narrowColumns": 1 },
+  "components": [
+    {
+      "id": "summary-grid",
+      "kind": "grid",
+      "title": "Summary by station",
+      "data": { "kind": "workflowOutput", "name": "summary" },
+      "columns": [
+        { "field": "stationId", "label": "Station", "format": "text" },
+        { "field": "status", "label": "Status", "format": "status" },
+        { "field": "count", "label": "Days", "format": "number" },
+        { "field": "minC", "label": "Min °C", "format": "number" },
+        { "field": "maxC", "label": "Max °C", "format": "number" },
+        { "field": "meanC", "label": "Mean °C", "format": "number" },
+        { "field": "error", "label": "Reason", "format": "text" }
+      ],
+      "actions": [
+        { "actionId": "sample.showReadings", "label": "Show readings", "bindings": { "readings": { "kind": "row", "field": "readings" } } },
+        { "actionId": "sample.summariseStation", "label": "Summarise this station", "bindings": { "stationId": { "kind": "row", "field": "stationId" } } }
+      ]
+    }
+  ]
+}

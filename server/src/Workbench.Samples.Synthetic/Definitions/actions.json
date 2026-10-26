@@ -1,0 +1,14 @@
+[
+  {
+    "actionId": "sample.showReadings",
+    "title": "Show readings",
+    "parameters": [ { "name": "readings", "kind": "dataRef" } ],
+    "target": { "kind": "openView", "viewId": "view.sample.readings", "viewVersion": "1.0.0", "dataParameter": "readings" }
+  },
+  {
+    "actionId": "sample.summariseStation",
+    "title": "Summarise this station",
+    "parameters": [ { "name": "stationId", "kind": "text" } ],
+    "target": { "kind": "runWorkflow", "workflowId": "workflow.sample.single-station-summary", "workflowVersion": "1.0.0", "inputFromParameters": { "stationId": "stationId" } }
+  }
+]

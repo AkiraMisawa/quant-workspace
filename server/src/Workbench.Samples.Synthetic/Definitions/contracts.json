@@ -1,0 +1,42 @@
+[
+  {
+    "contractId": "workbench.context",
+    "contractVersion": "1.0.0",
+    "title": "Context",
+    "schema": {
+      "type": "object",
+      "title": "Context",
+      "properties": {
+        "region": { "type": "string", "title": "Region", "enum": ["North", "South", "West"] },
+        "asOf": { "type": "string", "title": "As of", "format": "date" }
+      },
+      "required": ["region", "asOf"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "contractId": "sample.station-summary-input",
+    "contractVersion": "1.0.0",
+    "title": "Station summary input",
+    "schema": {
+      "type": "object",
+      "properties": { "days": { "type": "integer", "title": "Days", "minimum": 1, "maximum": 31 } },
+      "required": ["days"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "contractId": "sample.single-station-input",
+    "contractVersion": "1.0.0",
+    "title": "Single station input",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "stationId": { "type": "string", "title": "Station", "minLength": 1 },
+        "days": { "type": "integer", "title": "Days", "minimum": 1, "maximum": 31, "default": 7 }
+      },
+      "required": ["stationId", "days"],
+      "additionalProperties": false
+    }
+  }
+]

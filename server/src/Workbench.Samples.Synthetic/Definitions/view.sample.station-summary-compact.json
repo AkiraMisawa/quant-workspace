@@ -1,0 +1,20 @@
+{
+  "documentType": "view",
+  "schemaVersion": "1.0.0",
+  "definitionId": "view.sample.station-summary-compact",
+  "version": "1.0.0",
+  "title": "Station summary (compact)",
+  "layout": { "wideColumns": 1, "narrowColumns": 1 },
+  "components": [
+    {
+      "id": "compact-grid",
+      "kind": "grid",
+      "title": "Mean by station",
+      "data": { "kind": "workflowOutput", "name": "summary" },
+      "columns": [
+        { "field": "stationId", "label": "Station", "format": "text" },
+        { "field": "meanC", "label": "Mean °C", "format": "number" }
+      ]
+    }
+  ]
+}

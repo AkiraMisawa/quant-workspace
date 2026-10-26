@@ -1,0 +1,21 @@
+{
+  "documentType": "view",
+  "schemaVersion": "1.0.0",
+  "definitionId": "view.sample.readings",
+  "version": "1.0.0",
+  "title": "Readings",
+  "layout": { "wideColumns": 1, "narrowColumns": 1 },
+  "components": [
+    {
+      "id": "readings-grid",
+      "kind": "grid",
+      "title": "Daily readings",
+      "data": { "kind": "workflowOutput", "name": "readings" },
+      "columns": [
+        { "field": "stationId", "label": "Station", "format": "text" },
+        { "field": "date", "label": "Date", "format": "date" },
+        { "field": "temperatureC", "label": "°C", "format": "number" }
+      ]
+    }
+  ]
+}

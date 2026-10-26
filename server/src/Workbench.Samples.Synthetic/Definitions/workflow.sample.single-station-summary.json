@@ -1,0 +1,43 @@
+{
+  "documentType": "workflow",
+  "schemaVersion": "1.0.0",
+  "definitionId": "workflow.sample.single-station-summary",
+  "version": "1.0.0",
+  "title": "Single station summary",
+  "inputContractId": "sample.single-station-input",
+  "inputContractVersion": "1.0.0",
+  "steps": [
+    {
+      "stepId": "stations",
+      "capabilityId": "sample.stations.get",
+      "capabilityVersion": "1.0.0",
+      "dependsOn": [],
+      "bindings": { "stationId": { "kind": "input", "path": "/stationId" } },
+      "failurePolicy": "stop"
+    },
+    {
+      "stepId": "readings",
+      "capabilityId": "sample.readings.generate",
+      "capabilityVersion": "1.0.0",
+      "dependsOn": ["stations"],
+      "forEach": { "kind": "output", "stepId": "stations", "port": "stations", "path": "/rows" },
+      "itemMode": "value",
+      "itemKeyPath": "/stationId",
+      "bindings": {
+        "station": { "kind": "item", "path": "" },
+        "asOf": { "kind": "context", "path": "/asOf" },
+        "days": { "kind": "input", "path": "/days" }
+      },
+      "failurePolicy": "collect"
+    },
+    {
+      "stepId": "summary",
+      "capabilityId": "sample.readings.summarise",
+      "capabilityVersion": "1.0.0",
+      "dependsOn": ["readings"],
+      "bindings": { "readings": { "kind": "output", "stepId": "readings", "port": "readings" } },
+      "failurePolicy": "stop"
+    }
+  ],
+  "outputs": { "summary": { "kind": "output", "stepId": "summary", "port": "summary" } }
+}
