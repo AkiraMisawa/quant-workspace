@@ -5,7 +5,8 @@ These questions are not an instruction to ask the owner everything before coding
 | Question | Default / useful work now | Gate |
 |---|---|---|
 | Exact ExGrid APIs and browser support? | Inspect/pin the repository and run a real component spike. Do not imitate its API. | P0; actual mobile release |
-| Blazor hosting mode? | Preserve existing hosted-WASM boundaries where integrating; choose a documented .NET10 mode for standalone demo after a small spike. | P0 |
+| Where are unloaded rows' effective XVA inputs materialised and validated? (ADR-0003 §5) | Recommend C# rules held to the TypeScript rules by shared JSON cases | XVA workspace slice |
+| ~~Blazor hosting mode?~~ Superseded by ADR-0001 (React client). | Preserve existing hosted-WASM boundaries where integrating; choose a documented .NET10 mode for standalone demo after a small spike. | P0 |
 | Main change after manual override? | Sticky field ownership with explicit reset to automatic is proposed. | Domain behavior review before rollout |
 | Which fields affect Before, After or both? | Keep known B/A and CSA/curve semantics explicit; initial economic fields may be display-only. Never infer old `useAsDiff` behavior. | Relevant XVA field editing |
 | Exact MA-to-NS relationship and CSA scope? | Separate IDs and validate via source data; fixture may use one-to-one. | Company source integration |

@@ -15,6 +15,8 @@ Exit: reproducible build/run instructions, an actual ExGrid sample, and a short 
 
 ## P1 — Generic composition and view proof
 
+*(2026-10-26: P1 is [slice 01](plans/slice-01-generic-workbench.md), with the command palette added; the XVA workspace slice opens P2. See ADR-0002.)*
+
 - Versioned registry/contracts and bounded workflow validator/executor interface.
 - Two or three nonfinancial synthetic capabilities with typed intermediate outputs.
 - Form/grid/chart/details renderers and registered row actions.

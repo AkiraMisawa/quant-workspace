@@ -30,6 +30,11 @@ Status: **CONFIRMED** = explicit user requirement or supplied operational fact. 
 | C22 | Unsaved workflows can be rebound and reused; saving/publishing is not required before a repeat. Data-dependent validation repeats on rebind. |
 | C23 | An empty CVA recovery override is passed as empty; analytics automatically uses the applicable CDS recovery. No additional effective-recovery scalar is required. Zero is an explicit override. |
 | C24 | Uncollateralized trade CSA is `nocsa_{ma id}`. The default uncollateralized discount curve is configurable (for example `jpy_ois`); later user edits remain authoritative. |
+| C25 | (2026-10-26) Frontend: React + TypeScript, Mantine, ExGrid's React adapters, TanStack Query, Zustand; ASP.NET Core backend; AG-UI. No other grid library replaces ExGrid. [ADR-0001](adr/0001-the-client-is-react-with-ex-grid.md) |
+| C26 | (2026-10-26) The product is Quant Workbench, a keyboard-first, AI-native composable platform; XVA, Rates, IM/SIMM and Position Management are domain applications. The generic workbench slice comes first. [ADR-0002](adr/0002-the-product-is-a-keyboard-first-workbench-and-the-generic-slice-comes-first.md) |
+| C27 | (2026-10-26) Primary acceptance criterion: a new capability is exposed through commands, AI, user-defined workflows and composed views without modifying the XVA pricer or adding a bespoke page. |
+| C28 | (2026-10-26) Client state is split into server, workspace, local UI and execution state; financial dependency resolution is pure TypeScript decoupled from Zustand; ExGrid owns no business rule. [ADR-0003](adr/0003-client-state-and-the-effective-pricing-input.md) |
+| C29 | (2026-10-26) Pricing must not require all of a large portfolio (tens of thousands of trades) to be loaded or rendered in the browser. |
 
 ## Recommended initial choices
 
