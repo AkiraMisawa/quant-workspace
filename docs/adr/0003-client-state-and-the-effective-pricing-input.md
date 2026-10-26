@@ -1,7 +1,6 @@
 # ADR-0003: Client state, and where the effective pricing input is resolved
 
-Status: **Accepted in part** (2026-10-26). Sections 1–4 are the owner's decisions. Section 5 is an open
-question that gates the XVA workspace slice, not slice 01.
+Status: **Accepted** (2026-10-26, owner's decisions; section 4 clarified and section 5 resolved the same day).
 
 ## 1. Four kinds of client state (CONFIRMED)
 
@@ -32,35 +31,39 @@ applicability, curve following, B/A meaning, reloads, overrides or input authori
 maps stable row and column IDs to the grid, turns the grid's edit and paste intents into workspace
 commands, and feeds partial updates without recreating unrelated row objects.
 
-## 4. Large portfolios (CONFIRMED requirement, DEFAULT design)
+## 4. Large portfolios (CONFIRMED, owner 2026-10-26)
 
-Counterparties may have tens of thousands of existing trades. Pricing must not require every trade to be
-loaded or rendered in the browser.
+Counterparties may have tens of thousands of existing trades. The owner clarified that the requirement
+is that the workspace stays responsive at that size ("it must not become heavy"), not that the original
+data stays out of the browser.
 
-DEFAULT: existing trades stay in an immutable server dataset revision and reach the grid through a
-paged `GridSource`; the workspace holds rules and exceptions (main CSA for new trades, CSA definitions and their discount curves, per-row overrides, B/A as a
-default membership plus exceptions), not a materialised copy of every row. Benchmarks at 10,000–50,000
-rows measure Zustand subscriptions, domain projection, ExGrid updates, React rendering and memory
-separately before any per-cell atom or reactive graph is considered.
+Decision:
 
-## 5. OPEN: who materialises the effective input of rows the browser never loaded
+- The client downloads the original (immutable baseline) data of the workspace and keeps the user's
+  changes separately. The grid shows the original with the changes applied, resolved by the pure
+  TypeScript rules of section 2, for every row.
+- Rendering is virtualised by ExGrid; no row is rendered unless it is in view. Heavy per-trade content
+  that no rule reads may be fetched on demand, but every field a rule can change or follow is held for
+  every row.
+- Price freezes the effective values of every row and submits them. The backend validates them
+  (eligibility of each CSA for its agreement, existence of each curve, the `nocsa_{ma id}` sentinel,
+  membership consistency) and translates them; it does not re-derive them with its own copy of the
+  following rules, so the rules have one implementation.
+- Changes are kept as exceptions over the original (B/A as a default membership plus exceptions; field
+  overrides by row ID), so a bulk change does not rewrite thousands of row objects.
+- Responsiveness is measured, not assumed: benchmarks at 10,000 and 50,000 rows measure download size
+  and time, memory, Zustand subscriptions, domain projection, ExGrid updates and React rendering
+  separately, for a single edit, a CSA curve change reaching many rows, a bulk B/A change, sort and
+  filter, a large paste and repeated pricing. No per-cell atom or reactive graph is added without such
+  a measurement.
 
-Example (owner's rule of 2026-10-26, `docs/03-xva-domain.md` §2.4): 8,000 of 30,000 existing trades
-reference CSA B and the browser has loaded 50 rows. The user changes CSA B's discount curve. Every
-trade on B whose curve still follows its CSA now has the new curve, and someone must produce that
-effective value for the rows the browser never held.
+## 5. Resolved: who materialises the effective input
 
-Sections 2 and 4 together raise a question the update does not answer. If the browser holds rules and
-exceptions over a server dataset, then the effective CSA, curve and membership of an unloaded row are
-computed by the domain rules somewhere other than the browser, and the backend must validate the
-submitted effective values.
+*(Open earlier on 2026-10-26, between rules in two languages, the TypeScript rules run on the server, and
+the browser materialising every row. Resolved the same day by section 4: the browser holds every row's
+rule-relevant fields, so it materialises every effective value and the server only validates.)*
 
-| Option | What happens | Cost |
-|---|---|---|
-| A. Rules in both languages, held together by shared cases | The TypeScript rules drive the UI; a C# implementation materialises and validates on the server; JSON cases run against both (ex-grid's own technique for its C# and TypeScript cores) | Two implementations of financial rules |
-| B. One TypeScript rules package, also run on the server | The same package runs in a Node process the backend calls to materialise and validate | A Node runtime beside ASP.NET Core |
-| C. The browser materialises every row before Price | Exact "what the grid shows" semantics | Contradicts section 4 for large portfolios |
-
-Recommendation: A for financial rules that must be validated server-side, because the backend is
-ASP.NET Core and the engines' adapters are C#; the frozen submission records the rules version that
-produced it. Decision required before the XVA workspace slice.
+Example that raised it (owner's rule, `docs/03-xva-domain.md` §2.4): 8,000 of 30,000 existing trades
+reference CSA B and the user changes CSA B's discount curve. Every trade on B whose curve still follows
+its CSA takes the new curve; the client computes that for all 8,000 rows, and the submission carries
+them.

@@ -69,12 +69,11 @@ Recorded in [ADR-0001](../adr/0001-the-client-is-react-with-ex-grid.md),
 |---|---|
 | C03 (Blazor + MudBlazor, React deferred) versus the owner's React instruction | Superseded by ADR-0001 |
 | The update's section 10 (XVA editing first) versus its priority correction (generic slice first) | The later correction wins, consistent with the handoff's P1 (ADR-0002) |
-| Effective values resolved by pure TypeScript in the client versus not loading every trade, with server-side validation of effective values | Open: ADR-0003 §5 |
+| Effective values resolved by pure TypeScript in the client versus not loading every trade, with server-side validation of effective values | Resolved: the requirement is responsiveness; the client holds every row (ADR-0003 §4, §5) |
 | Handoff wording that names Blazor, Razor, Fluxor or hosting modes | Superseded where it names client technology; behaviour unchanged (ADR-0001) |
 
 ## 6. Unresolved issues
 
-- ADR-0003 §5: where unloaded rows' effective input is materialised and validated. Gates the XVA slice.
 - ADR-0001 A5: exposure inside the existing production host.
 - Grid touch support in ex-grid. Gates UX02.
 - Position Management: named, not specified.
