@@ -38,12 +38,17 @@ Counterparties may have tens of thousands of existing trades. Pricing must not r
 loaded or rendered in the browser.
 
 DEFAULT: existing trades stay in an immutable server dataset revision and reach the grid through a
-paged `GridSource`; the workspace holds rules and exceptions (main CSA, per-row overrides, B/A as a
+paged `GridSource`; the workspace holds rules and exceptions (main CSA for new trades, CSA definitions and their discount curves, per-row overrides, B/A as a
 default membership plus exceptions), not a materialised copy of every row. Benchmarks at 10,000–50,000
 rows measure Zustand subscriptions, domain projection, ExGrid updates, React rendering and memory
 separately before any per-cell atom or reactive graph is considered.
 
 ## 5. OPEN: who materialises the effective input of rows the browser never loaded
+
+Example (owner's rule of 2026-10-26, `docs/03-xva-domain.md` §2.4): 8,000 of 30,000 existing trades
+reference CSA B and the browser has loaded 50 rows. The user changes CSA B's discount curve. Every
+trade on B whose curve still follows its CSA now has the new curve, and someone must produce that
+effective value for the rows the browser never held.
 
 Sections 2 and 4 together raise a question the update does not answer. If the browser holds rules and
 exceptions over a server dataset, then the effective CSA, curve and membership of an unloaded row are

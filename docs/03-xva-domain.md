@@ -86,6 +86,8 @@ The initial model must allow at least currency, thresholds, MTA, and discount-cu
 - Existing trades preserve their original valid CSA assignment unless a documented action changes it.
 - New trades receive the current main CSA as a starting default when the context is collateralized; explicitly uncollateralized new trades receive the matching `nocsa_{ma id}` sentinel and the configured default curve through automatic following.
 - If a trade's curve is automatically bound to its CSA, changing that trade's CSA updates the curve. A later explicit curve edit is retained in the final submitted input.
+- **CONFIRMED (owner, 2026-10-26):** the main CSA is used only as the starting CSA of new trades. An existing trade's CSA changes only when the user changes it explicitly; changing the main CSA never reassigns existing trades.
+- **CONFIRMED (owner, 2026-10-26):** a CSA's discount curve is editable in the client. When the user changes the discount curve of a CSA, every trade that references that CSA and whose curve still follows its CSA takes the new curve automatically, existing trades included. A trade whose curve the user set explicitly keeps it (C05).
 - A CSA or curve that becomes ineligible causes a visible validation issue. Do not silently replace it with another selection.
 
 ## 3. Trade inputs live before and beyond a Run
