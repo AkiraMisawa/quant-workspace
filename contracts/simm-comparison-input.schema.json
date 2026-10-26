@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/qwb/simm-comparison-input.schema.json",
+  "title": "Domain example: resolved SIMM comparison input",
+  "description": "Synthetic example contract belonging to the margin domain module, not generic composition.",
+  "type": "object",
+  "properties": {
+    "documentType": {
+      "const": "simmComparisonInput"
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "valueDate": {
+      "type": "string",
+      "format": "date"
+    },
+    "reportingCurrency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "tradeInput": {
+      "type": "object",
+      "properties": {
+        "dataId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contractId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contractVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "dataId",
+        "contractId",
+        "contractVersion",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "caseId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "counterpartyRegistrationId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "masterAgreementId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nettingSetId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "csaId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "newTradeDiscountCurveId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "baselineSnapshotId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "marketSnapshotId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "methodologyConfigRef": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "caseId",
+          "counterpartyRegistrationId",
+          "masterAgreementId",
+          "nettingSetId",
+          "csaId",
+          "newTradeDiscountCurveId",
+          "baselineSnapshotId",
+          "marketSnapshotId",
+          "methodologyConfigRef"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    }
+  },
+  "required": [
+    "documentType",
+    "schemaVersion",
+    "valueDate",
+    "reportingCurrency",
+    "tradeInput",
+    "cases"
+  ],
+  "additionalProperties": false
+}

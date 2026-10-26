@@ -1,0 +1,48 @@
+{
+  "documentType": "providerProfiles",
+  "schemaVersion": "1.0.0",
+  "description": "Illustrative registrations only; endpoints/SDKs must be implemented and validated. Never choose a mock after real-provider failure.",
+  "profiles": {
+    "PersonalDemo": {
+      "bindings": {
+        "rates.price": "sample.rates.worker",
+        "pricing.xva.evaluate": "demo.xva.deterministic",
+        "risk.crif.generate": "demo.crif.fixture",
+        "margin.simm.calculate": "demo.simm.fixture"
+      },
+      "sources": {
+        "market": "demo.synthetic-market",
+        "trade": "demo.trade-fixtures",
+        "baseline": "demo.baseline-fixtures"
+      },
+      "mockCapabilities": [
+        "pricing.xva.evaluate",
+        "risk.crif.generate",
+        "margin.simm.calculate"
+      ],
+      "pricingDefaults": {
+        "profileRef": "pricing-defaults-demo-jpy-v1",
+        "uncollateralizedDiscountCurveId": "jpy_ois"
+      }
+    },
+    "Company": {
+      "bindings": {
+        "rates.price": "company.rates.service",
+        "pricing.xva.evaluate": "company.xva.mq",
+        "risk.crif.generate": "company.crif.service",
+        "margin.simm.calculate": "company.simm.service"
+      },
+      "sources": {
+        "market": "company.market",
+        "trade": "company.booking",
+        "baseline": "company.baseline"
+      },
+      "mockCapabilities": [],
+      "startupPolicy": "Fail if a configured adapter is absent; do not load company SDKs in standalone core.",
+      "pricingDefaults": {
+        "profileRef": "company-configured-defaults",
+        "uncollateralizedDiscountCurveId": "CONFIGURE_IN_COMPANY_ENVIRONMENT"
+      }
+    }
+  }
+}

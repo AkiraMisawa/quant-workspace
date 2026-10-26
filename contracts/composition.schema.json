@@ -1,0 +1,871 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/qwb/composition.schema.json",
+  "title": "Quant Workbench bounded composition vocabulary",
+  "description": "Draft starter contracts. Domain semantics, authorization and registry compatibility need separate validation.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Workflow"
+    },
+    {
+      "$ref": "#/$defs/View"
+    },
+    {
+      "$ref": "#/$defs/Catalog"
+    },
+    {
+      "$ref": "#/$defs/Dataset"
+    },
+    {
+      "$ref": "#/$defs/OutcomeCollection"
+    }
+  ],
+  "$defs": {
+    "TypedDataRef": {
+      "type": "object",
+      "properties": {
+        "dataId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contractId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contractVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "dataId",
+        "contractId",
+        "contractVersion",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "Binding": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "input"
+            },
+            "path": {
+              "type": "string",
+              "pattern": "^(|/.*)$"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "context"
+            },
+            "path": {
+              "type": "string",
+              "pattern": "^(|/.*)$"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "constant"
+            },
+            "value": {}
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "output"
+            },
+            "stepId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "port": {
+              "type": "string",
+              "minLength": 1
+            },
+            "path": {
+              "type": "string",
+              "pattern": "^(|/.*)$"
+            }
+          },
+          "required": [
+            "kind",
+            "stepId",
+            "port"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "item"
+            },
+            "path": {
+              "type": "string",
+              "pattern": "^(|/.*)$"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "dataReference"
+            },
+            "reference": {
+              "$ref": "#/$defs/TypedDataRef"
+            }
+          },
+          "required": [
+            "kind",
+            "reference"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Step": {
+      "type": "object",
+      "properties": {
+        "stepId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capabilityId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capabilityVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0
+        },
+        "bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Binding"
+          }
+        },
+        "forEach": {
+          "$ref": "#/$defs/Binding"
+        },
+        "maxConcurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "failurePolicy": {
+          "enum": [
+            "stop",
+            "collect"
+          ]
+        },
+        "itemMode": {
+          "enum": [
+            "value",
+            "outcomeValue"
+          ]
+        },
+        "itemKeyPath": {
+          "type": "string",
+          "pattern": "^/.*$"
+        }
+      },
+      "required": [
+        "stepId",
+        "capabilityId",
+        "capabilityVersion",
+        "dependsOn",
+        "bindings",
+        "failurePolicy"
+      ],
+      "additionalProperties": false
+    },
+    "Workflow": {
+      "type": "object",
+      "properties": {
+        "documentType": {
+          "const": "workflow"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "definitionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputContractId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputContractVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "minItems": 1
+        },
+        "outputs": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/Binding"
+          }
+        }
+      },
+      "required": [
+        "documentType",
+        "schemaVersion",
+        "definitionId",
+        "version",
+        "title",
+        "inputContractId",
+        "inputContractVersion",
+        "steps",
+        "outputs"
+      ],
+      "additionalProperties": false
+    },
+    "Port": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contractId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contractVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "cardinality": {
+          "enum": [
+            "one",
+            "many"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "contractId",
+        "contractVersion",
+        "cardinality"
+      ],
+      "additionalProperties": false
+    },
+    "Capability": {
+      "type": "object",
+      "properties": {
+        "capabilityId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputPorts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Port"
+          },
+          "minItems": 1
+        },
+        "outputPorts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Port"
+          },
+          "minItems": 1
+        },
+        "executionKind": {
+          "enum": [
+            "requestResponse",
+            "job",
+            "subscription"
+          ]
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "readData",
+              "compute",
+              "persistAnalysis"
+            ]
+          },
+          "minItems": 0
+        }
+      },
+      "required": [
+        "capabilityId",
+        "version",
+        "title",
+        "inputPorts",
+        "outputPorts",
+        "executionKind",
+        "effects"
+      ],
+      "additionalProperties": false
+    },
+    "Catalog": {
+      "type": "object",
+      "properties": {
+        "documentType": {
+          "const": "capabilityCatalog"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Capability"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "documentType",
+        "schemaVersion",
+        "capabilities"
+      ],
+      "additionalProperties": false
+    },
+    "ViewData": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "workflowOutput"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "dataReference"
+            },
+            "reference": {
+              "$ref": "#/$defs/TypedDataRef"
+            }
+          },
+          "required": [
+            "kind",
+            "reference"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Column": {
+      "type": "object",
+      "properties": {
+        "field": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "format": {
+          "enum": [
+            "text",
+            "number",
+            "currency",
+            "percent",
+            "date",
+            "status"
+          ]
+        },
+        "currencyField": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "field",
+        "label",
+        "format"
+      ],
+      "additionalProperties": false
+    },
+    "RowBinding": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "row"
+        },
+        "field": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind",
+        "field"
+      ],
+      "additionalProperties": false
+    },
+    "Action": {
+      "type": "object",
+      "properties": {
+        "actionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/RowBinding"
+          }
+        }
+      },
+      "required": [
+        "actionId",
+        "label",
+        "bindings"
+      ],
+      "additionalProperties": false
+    },
+    "Component": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "form",
+            "choice",
+            "grid",
+            "chart",
+            "metric",
+            "progress",
+            "details"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data": {
+          "$ref": "#/$defs/ViewData"
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Column"
+          },
+          "minItems": 0
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "minItems": 0
+        },
+        "chartType": {
+          "enum": [
+            "bar",
+            "line"
+          ]
+        },
+        "xField": {
+          "type": "string",
+          "minLength": 1
+        },
+        "yFields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0
+        },
+        "currencyField": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "View": {
+      "type": "object",
+      "properties": {
+        "documentType": {
+          "const": "view"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "definitionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "layout": {
+          "type": "object",
+          "properties": {
+            "wideColumns": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3
+            },
+            "narrowColumns": {
+              "const": 1
+            }
+          },
+          "required": [
+            "wideColumns",
+            "narrowColumns"
+          ],
+          "additionalProperties": false
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Component"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "documentType",
+        "schemaVersion",
+        "definitionId",
+        "version",
+        "title",
+        "layout",
+        "components"
+      ],
+      "additionalProperties": false
+    },
+    "Dataset": {
+      "type": "object",
+      "properties": {
+        "documentType": {
+          "const": "dataset"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "reference": {
+          "$ref": "#/$defs/TypedDataRef"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "enum": [
+                  "string",
+                  "number",
+                  "integer",
+                  "boolean",
+                  "date",
+                  "dataRef"
+                ]
+              },
+              "nullable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "field",
+              "type",
+              "nullable"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "minItems": 0
+        },
+        "metadata": {
+          "type": "object",
+          "required": [
+            "contractId",
+            "contractVersion",
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "contractId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "contractVersion": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "value": {
+              "type": "object"
+            }
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "required": [
+            "executionMode",
+            "dataOrigin",
+            "producerInvocationId"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "executionMode": {
+              "enum": [
+                "actual",
+                "simulated"
+              ]
+            },
+            "dataOrigin": {
+              "enum": [
+                "source",
+                "synthetic",
+                "mixed"
+              ]
+            },
+            "producerInvocationId": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "required": [
+        "documentType",
+        "schemaVersion",
+        "reference",
+        "title",
+        "columns",
+        "rows",
+        "provenance"
+      ],
+      "additionalProperties": false
+    },
+    "Outcome": {
+      "type": "object",
+      "required": [
+        "itemKey",
+        "identity",
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "itemKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "identity": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "blocked"
+          ]
+        },
+        "value": {},
+        "error": {
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "causedByItemKey": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "succeeded"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "value"
+            ],
+            "not": {
+              "required": [
+                "error"
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "error"
+            ],
+            "not": {
+              "required": [
+                "value"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "OutcomeCollection": {
+      "type": "object",
+      "required": [
+        "documentType",
+        "schemaVersion",
+        "elementContractId",
+        "elementContractVersion",
+        "items"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "documentType": {
+          "const": "mappedOutcomes"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "elementContractId": {
+          "type": "string"
+        },
+        "elementContractVersion": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Outcome"
+          }
+        }
+      }
+    }
+  }
+}

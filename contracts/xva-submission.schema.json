@@ -1,0 +1,698 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/qwb/xva-submission.schema.json",
+  "title": "Fixed XVA effective input submission (starter subset)",
+  "description": "Full committed typed input. Does not specify every company product or original analytics payload.",
+  "type": "object",
+  "properties": {
+    "documentType": {
+      "const": "xvaSubmission"
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspaceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspaceRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "context": {
+      "type": "object",
+      "properties": {
+        "valueDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "counterpartyRegistrationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "counterpartyCode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "legalEntityCode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mainMasterAgreementId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mainNettingSetId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mainCsaId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "defaultCollateralization": {
+          "enum": [
+            "collateralized",
+            "uncollateralized"
+          ]
+        }
+      },
+      "required": [
+        "valueDate",
+        "counterpartyRegistrationId",
+        "counterpartyCode",
+        "legalEntityCode",
+        "mainMasterAgreementId",
+        "mainNettingSetId",
+        "mainCsaId",
+        "defaultCollateralization"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "defaultCollateralization": {
+                "const": "uncollateralized"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "mainCsaId": {
+                "pattern": "^nocsa_.+$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "baselineSnapshotId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "marketSnapshotId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "credit": {
+      "$ref": "#/$defs/Credit"
+    },
+    "nettingSets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/NettingSet"
+      },
+      "minItems": 1
+    },
+    "csas": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Csa"
+      },
+      "minItems": 0
+    },
+    "trades": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Trade"
+      },
+      "minItems": 0
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Scenario"
+      },
+      "minItems": 1
+    },
+    "calculation": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "standard",
+            "individualAddition"
+          ]
+        },
+        "candidateTradeInstanceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "requestedMeasures": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "PV",
+              "CVA",
+              "DVA",
+              "FVA",
+              "MVA"
+            ]
+          },
+          "minItems": 1
+        },
+        "displayCurrency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "requestRisk": {
+          "type": "boolean"
+        },
+        "modelConfigRef": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "mode",
+        "candidateTradeInstanceIds",
+        "requestedMeasures",
+        "displayCurrency",
+        "requestRisk",
+        "modelConfigRef"
+      ],
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Provenance"
+      },
+      "minItems": 0
+    },
+    "synthetic": {
+      "type": "boolean",
+      "description": "Fixture/source-data hint only. Server verifies source and engine provenance independently."
+    },
+    "defaultsProfileRef": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "documentType",
+    "schemaVersion",
+    "idempotencyKey",
+    "workspaceId",
+    "workspaceRevision",
+    "context",
+    "baselineSnapshotId",
+    "marketSnapshotId",
+    "credit",
+    "nettingSets",
+    "csas",
+    "trades",
+    "scenarios",
+    "calculation",
+    "provenance",
+    "synthetic"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "DataRef": {
+      "type": "object",
+      "properties": {
+        "dataId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contractId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contractVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "dataId",
+        "contractId",
+        "contractVersion",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "Recovery": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "SpreadQuote": {
+      "type": "object",
+      "properties": {
+        "tenor": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*[MY]$"
+        },
+        "spreadBps": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "tenor",
+        "spreadBps"
+      ],
+      "additionalProperties": false
+    },
+    "CreditRow": {
+      "type": "object",
+      "properties": {
+        "curveId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ticker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "seniority": {
+          "type": "string",
+          "minLength": 1
+        },
+        "docClause": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cdsRecovery": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "quotes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SpreadQuote"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "curveId",
+        "ticker",
+        "currency",
+        "seniority",
+        "docClause",
+        "cdsRecovery",
+        "quotes"
+      ],
+      "additionalProperties": false
+    },
+    "Credit": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "singleName",
+            "proxy"
+          ]
+        },
+        "proxyAttributes": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "region": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sector": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "rating": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "region",
+                "sector",
+                "rating"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "curves": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CreditRow"
+          },
+          "minItems": 1
+        },
+        "cvaRecoveryOverride": {
+          "$ref": "#/$defs/Recovery",
+          "description": "Null/empty is intentionally passed to analytics, which uses the applicable CDS recovery. Zero is an explicit override."
+        }
+      },
+      "required": [
+        "mode",
+        "proxyAttributes",
+        "curves",
+        "cvaRecoveryOverride"
+      ],
+      "additionalProperties": false
+    },
+    "NettingSet": {
+      "type": "object",
+      "properties": {
+        "nettingSetId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "masterAgreementId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "closeoutNettingEnforceable": {
+          "type": "boolean"
+        },
+        "isMain": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "nettingSetId",
+        "masterAgreementId",
+        "closeoutNettingEnforceable",
+        "isMain"
+      ],
+      "additionalProperties": false
+    },
+    "CollateralTerms": {
+      "type": "object",
+      "properties": {
+        "threshold": {
+          "type": "number",
+          "minimum": 0
+        },
+        "minimumTransferAmount": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "threshold",
+        "minimumTransferAmount"
+      ],
+      "additionalProperties": false
+    },
+    "Csa": {
+      "type": "object",
+      "properties": {
+        "csaId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "masterAgreementId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "isMain": {
+          "type": "boolean"
+        },
+        "origin": {
+          "enum": [
+            "source",
+            "userDefined"
+          ]
+        },
+        "termsCurrency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "eligibleCollateralCurrencies": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "minItems": 1
+        },
+        "ourTerms": {
+          "$ref": "#/$defs/CollateralTerms"
+        },
+        "counterpartyTerms": {
+          "$ref": "#/$defs/CollateralTerms"
+        },
+        "defaultDiscountCurveId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "csaId",
+        "masterAgreementId",
+        "isMain",
+        "origin",
+        "termsCurrency",
+        "eligibleCollateralCurrencies",
+        "ourTerms",
+        "counterpartyTerms",
+        "defaultDiscountCurveId"
+      ],
+      "additionalProperties": false
+    },
+    "Trade": {
+      "type": "object",
+      "properties": {
+        "tradeInstanceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tradeInput": {
+          "$ref": "#/$defs/DataRef"
+        },
+        "bookingId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "origin": {
+          "enum": [
+            "existing",
+            "new"
+          ]
+        },
+        "tradeType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cashflowCurrencies": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "minItems": 1
+        },
+        "maturity": {
+          "type": "string",
+          "format": "date"
+        },
+        "metDate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "nettingSetId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "csaId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "discountCurveId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "includeBefore": {
+          "type": "boolean"
+        },
+        "includeAfter": {
+          "type": "boolean"
+        },
+        "collateralization": {
+          "enum": [
+            "collateralized",
+            "uncollateralized"
+          ]
+        }
+      },
+      "required": [
+        "tradeInstanceId",
+        "tradeInput",
+        "bookingId",
+        "origin",
+        "tradeType",
+        "cashflowCurrencies",
+        "maturity",
+        "metDate",
+        "nettingSetId",
+        "csaId",
+        "discountCurveId",
+        "includeBefore",
+        "includeAfter",
+        "collateralization"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "collateralization": {
+                "const": "uncollateralized"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "csaId": {
+                "pattern": "^nocsa_.+$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Scenario": {
+      "type": "object",
+      "properties": {
+        "scenarioId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "base",
+            "marketShock"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "shocks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "riskFactorId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "operation": {
+                "enum": [
+                  "add",
+                  "multiply"
+                ]
+              },
+              "value": {
+                "type": "number"
+              },
+              "unit": {
+                "enum": [
+                  "decimalRate",
+                  "relativeMultiplier",
+                  "basisPoints"
+                ]
+              }
+            },
+            "required": [
+              "riskFactorId",
+              "operation",
+              "value",
+              "unit"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0
+        }
+      },
+      "required": [
+        "scenarioId",
+        "kind",
+        "label",
+        "shocks"
+      ],
+      "additionalProperties": false
+    },
+    "Provenance": {
+      "type": "object",
+      "properties": {
+        "targetType": {
+          "enum": [
+            "tradeInstance",
+            "csa",
+            "creditCurve",
+            "context"
+          ]
+        },
+        "targetId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "field": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "enum": [
+            "manual",
+            "automatic",
+            "source"
+          ]
+        },
+        "previousValue": {},
+        "value": {},
+        "editRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "targetType",
+        "targetId",
+        "field",
+        "source",
+        "previousValue",
+        "value",
+        "editRevision"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "documentType": "simmComparisonInput",
+  "schemaVersion": "1.0.0",
+  "valueDate": "2026-10-23",
+  "reportingCurrency": "USD",
+  "tradeInput": {
+    "dataId": "input-new-001",
+    "contractId": "qwb.trade-input",
+    "contractVersion": "1.0.0",
+    "revision": "1"
+  },
+  "cases": [
+    {
+      "caseId": "case-A",
+      "counterpartyRegistrationId": "registration-A-UK",
+      "masterAgreementId": "MA-A",
+      "nettingSetId": "NS-A",
+      "csaId": "CSA-A1",
+      "newTradeDiscountCurveId": "CURVE-A1",
+      "baselineSnapshotId": "baseline-A-001",
+      "marketSnapshotId": "market-demo-017",
+      "methodologyConfigRef": "simm-config-demo-v1"
+    },
+    {
+      "caseId": "case-B",
+      "counterpartyRegistrationId": "registration-B-UK",
+      "masterAgreementId": "MA-B",
+      "nettingSetId": "NS-B",
+      "csaId": "CSA-B2",
+      "newTradeDiscountCurveId": "CURVE-B2",
+      "baselineSnapshotId": "baseline-B-001",
+      "marketSnapshotId": "market-demo-017",
+      "methodologyConfigRef": "simm-config-demo-v1"
+    },
+    {
+      "caseId": "case-C",
+      "counterpartyRegistrationId": "registration-C-EU",
+      "masterAgreementId": "MA-C",
+      "nettingSetId": "NS-C",
+      "csaId": "CSA-C1",
+      "newTradeDiscountCurveId": "CURVE-C1",
+      "baselineSnapshotId": "baseline-C-001",
+      "marketSnapshotId": "market-demo-017",
+      "methodologyConfigRef": "simm-config-demo-v1"
+    }
+  ]
+}

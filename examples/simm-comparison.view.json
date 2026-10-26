@@ -1,0 +1,103 @@
+{
+  "documentType": "view",
+  "schemaVersion": "1.0.0",
+  "definitionId": "view.simm-comparison",
+  "version": "1.0.0",
+  "title": "Incremental SIMM comparison",
+  "layout": {
+    "wideColumns": 2,
+    "narrowColumns": 1
+  },
+  "components": [
+    {
+      "id": "comparison-grid",
+      "kind": "grid",
+      "title": "Comparison",
+      "data": {
+        "kind": "workflowOutput",
+        "name": "comparison"
+      },
+      "columns": [
+        {
+          "field": "counterparty",
+          "label": "Counterparty",
+          "format": "text"
+        },
+        {
+          "field": "legalEntity",
+          "label": "Entity",
+          "format": "text"
+        },
+        {
+          "field": "csaId",
+          "label": "CSA",
+          "format": "text"
+        },
+        {
+          "field": "before",
+          "label": "Before",
+          "format": "currency",
+          "currencyField": "currency"
+        },
+        {
+          "field": "after",
+          "label": "After",
+          "format": "currency",
+          "currencyField": "currency"
+        },
+        {
+          "field": "incremental",
+          "label": "Incremental",
+          "format": "currency",
+          "currencyField": "currency"
+        },
+        {
+          "field": "status",
+          "label": "Status",
+          "format": "status"
+        }
+      ],
+      "actions": [
+        {
+          "actionId": "analysis.openCaseInputs",
+          "label": "Inspect inputs",
+          "bindings": {
+            "caseId": {
+              "kind": "row",
+              "field": "caseId"
+            }
+          }
+        },
+        {
+          "actionId": "margin.compareWithAnotherCsa",
+          "label": "Compare another CSA",
+          "bindings": {
+            "caseId": {
+              "kind": "row",
+              "field": "caseId"
+            },
+            "counterpartyRegistrationId": {
+              "kind": "row",
+              "field": "counterpartyRegistrationId"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "increment-chart",
+      "kind": "chart",
+      "title": "Incremental SIMM",
+      "data": {
+        "kind": "workflowOutput",
+        "name": "comparison"
+      },
+      "chartType": "bar",
+      "xField": "counterparty",
+      "yFields": [
+        "incremental"
+      ],
+      "currencyField": "currency"
+    }
+  ]
+}

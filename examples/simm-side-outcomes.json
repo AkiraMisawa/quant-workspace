@@ -1,0 +1,60 @@
+{
+  "documentType": "mappedOutcomes",
+  "schemaVersion": "1.0.0",
+  "elementContractId": "qwb.simm-side-result",
+  "elementContractVersion": "1.0.0",
+  "items": [
+    {
+      "itemKey": "case-A/before",
+      "identity": {
+        "caseId": "case-A",
+        "side": "before"
+      },
+      "status": "succeeded",
+      "value": {
+        "caseId": "case-A",
+        "side": "before",
+        "amount": 12000000,
+        "currency": "USD",
+        "methodologyVersion": "DEMO-NOT-A-SIMM-MODEL"
+      }
+    },
+    {
+      "itemKey": "case-A/after",
+      "identity": {
+        "caseId": "case-A",
+        "side": "after"
+      },
+      "status": "blocked",
+      "error": {
+        "code": "UpstreamCrifFailed",
+        "message": "Synthetic failure fixture: no SIMM calculation was attempted for this side.",
+        "causedByItemKey": "case-A/after"
+      }
+    },
+    {
+      "itemKey": "case-B/before",
+      "identity": {
+        "caseId": "case-B",
+        "side": "before"
+      },
+      "status": "failed",
+      "error": {
+        "code": "ProviderUnavailable",
+        "message": "Synthetic failure fixture."
+      }
+    },
+    {
+      "itemKey": "case-B/after",
+      "identity": {
+        "caseId": "case-B",
+        "side": "after"
+      },
+      "status": "failed",
+      "error": {
+        "code": "ProviderUnavailable",
+        "message": "Synthetic failure fixture."
+      }
+    }
+  ]
+}

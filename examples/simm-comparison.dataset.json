@@ -1,0 +1,116 @@
+{
+  "documentType": "dataset",
+  "schemaVersion": "1.0.0",
+  "reference": {
+    "dataId": "dataset-simm-demo-001",
+    "contractId": "qwb.simm-comparison-dataset",
+    "contractVersion": "1.0.0",
+    "revision": "1"
+  },
+  "title": "Synthetic SIMM comparison",
+  "columns": [
+    {
+      "field": "caseId",
+      "type": "string",
+      "nullable": false
+    },
+    {
+      "field": "counterpartyRegistrationId",
+      "type": "string",
+      "nullable": false
+    },
+    {
+      "field": "counterparty",
+      "type": "string",
+      "nullable": false
+    },
+    {
+      "field": "legalEntity",
+      "type": "string",
+      "nullable": false
+    },
+    {
+      "field": "csaId",
+      "type": "string",
+      "nullable": false
+    },
+    {
+      "field": "currency",
+      "type": "string",
+      "nullable": false
+    },
+    {
+      "field": "status",
+      "type": "string",
+      "nullable": false
+    },
+    {
+      "field": "before",
+      "type": "number",
+      "nullable": true
+    },
+    {
+      "field": "after",
+      "type": "number",
+      "nullable": true
+    },
+    {
+      "field": "incremental",
+      "type": "number",
+      "nullable": true
+    }
+  ],
+  "rows": [
+    {
+      "caseId": "case-A",
+      "counterpartyRegistrationId": "registration-A-UK",
+      "counterparty": "A",
+      "legalEntity": "UK",
+      "csaId": "CSA-A1",
+      "currency": "USD",
+      "before": 12000000,
+      "after": 12420000,
+      "incremental": 420000,
+      "status": "Succeeded"
+    },
+    {
+      "caseId": "case-B",
+      "counterpartyRegistrationId": "registration-B-UK",
+      "counterparty": "B",
+      "legalEntity": "UK",
+      "csaId": "CSA-B2",
+      "currency": "USD",
+      "before": 8700000,
+      "after": 8970000,
+      "incremental": 270000,
+      "status": "Succeeded"
+    },
+    {
+      "caseId": "case-C",
+      "counterpartyRegistrationId": "registration-C-EU",
+      "counterparty": "C",
+      "legalEntity": "EU",
+      "csaId": "CSA-C1",
+      "currency": "USD",
+      "before": 15100000,
+      "after": 15710000,
+      "incremental": 610000,
+      "status": "Succeeded"
+    }
+  ],
+  "metadata": {
+    "contractId": "qwb.simm-comparison-basis",
+    "contractVersion": "1.0.0",
+    "value": {
+      "valueDate": "2026-10-23",
+      "marketSnapshotId": "market-demo-017",
+      "methodologyVersion": "DEMO-NOT-A-SIMM-MODEL",
+      "currency": "USD"
+    }
+  },
+  "provenance": {
+    "executionMode": "simulated",
+    "dataOrigin": "synthetic",
+    "producerInvocationId": "invocation-demo-compare"
+  }
+}

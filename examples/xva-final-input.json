@@ -1,0 +1,220 @@
+{
+  "documentType": "xvaSubmission",
+  "schemaVersion": "1.0.0",
+  "idempotencyKey": "submit-demo-0001",
+  "workspaceId": "workspace-demo-001",
+  "workspaceRevision": 17,
+  "context": {
+    "valueDate": "2026-10-23",
+    "counterpartyRegistrationId": "registration-DEMO-UK",
+    "counterpartyCode": "DEMO",
+    "legalEntityCode": "UK",
+    "mainMasterAgreementId": "MA-001",
+    "mainNettingSetId": "NS-001",
+    "mainCsaId": "CSA-B",
+    "defaultCollateralization": "collateralized"
+  },
+  "baselineSnapshotId": "baseline-demo-004",
+  "marketSnapshotId": "market-demo-017",
+  "credit": {
+    "mode": "proxy",
+    "proxyAttributes": {
+      "region": "Europe",
+      "sector": "Financials",
+      "rating": "A"
+    },
+    "curves": [
+      {
+        "curveId": "credit-demo-001",
+        "ticker": null,
+        "currency": "USD",
+        "seniority": "SeniorUnsecured",
+        "docClause": "DEMO-DOC",
+        "cdsRecovery": 0.4,
+        "quotes": [
+          {
+            "tenor": "6M",
+            "spreadBps": 45
+          },
+          {
+            "tenor": "1Y",
+            "spreadBps": 55
+          },
+          {
+            "tenor": "5Y",
+            "spreadBps": 90
+          },
+          {
+            "tenor": "20Y",
+            "spreadBps": 120
+          }
+        ]
+      }
+    ],
+    "cvaRecoveryOverride": 0.35
+  },
+  "nettingSets": [
+    {
+      "nettingSetId": "NS-001",
+      "masterAgreementId": "MA-001",
+      "closeoutNettingEnforceable": true,
+      "isMain": true
+    }
+  ],
+  "csas": [
+    {
+      "csaId": "CSA-A",
+      "masterAgreementId": "MA-001",
+      "isMain": false,
+      "origin": "source",
+      "termsCurrency": "USD",
+      "eligibleCollateralCurrencies": [
+        "USD"
+      ],
+      "ourTerms": {
+        "threshold": 0,
+        "minimumTransferAmount": 100000
+      },
+      "counterpartyTerms": {
+        "threshold": 0,
+        "minimumTransferAmount": 100000
+      },
+      "defaultDiscountCurveId": "CURVE-USD-CSA-A"
+    },
+    {
+      "csaId": "CSA-B",
+      "masterAgreementId": "MA-001",
+      "isMain": true,
+      "origin": "source",
+      "termsCurrency": "USD",
+      "eligibleCollateralCurrencies": [
+        "USD"
+      ],
+      "ourTerms": {
+        "threshold": 0,
+        "minimumTransferAmount": 100000
+      },
+      "counterpartyTerms": {
+        "threshold": 1000000,
+        "minimumTransferAmount": 100000
+      },
+      "defaultDiscountCurveId": "CURVE-USD-CSA-B"
+    }
+  ],
+  "trades": [
+    {
+      "tradeInstanceId": "existing-001",
+      "tradeInput": {
+        "dataId": "input-existing-001",
+        "contractId": "qwb.trade-input",
+        "contractVersion": "1.0.0",
+        "revision": "1"
+      },
+      "bookingId": "BOOKED-existing-001",
+      "origin": "existing",
+      "tradeType": "IRS",
+      "cashflowCurrencies": [
+        "USD"
+      ],
+      "maturity": "2031-10-23",
+      "metDate": null,
+      "nettingSetId": "NS-001",
+      "csaId": "CSA-A",
+      "discountCurveId": "CURVE-USD-CSA-A",
+      "includeBefore": true,
+      "includeAfter": true,
+      "collateralization": "collateralized"
+    },
+    {
+      "tradeInstanceId": "new-001",
+      "tradeInput": {
+        "dataId": "input-new-001",
+        "contractId": "qwb.trade-input",
+        "contractVersion": "1.0.0",
+        "revision": "1"
+      },
+      "bookingId": "DRAFT-new-001",
+      "origin": "new",
+      "tradeType": "IRS",
+      "cashflowCurrencies": [
+        "USD"
+      ],
+      "maturity": "2031-10-23",
+      "metDate": null,
+      "nettingSetId": "NS-001",
+      "csaId": "CSA-B",
+      "discountCurveId": "CURVE-USD-CSA-B",
+      "includeBefore": false,
+      "includeAfter": true,
+      "collateralization": "collateralized"
+    },
+    {
+      "tradeInstanceId": "new-002",
+      "tradeInput": {
+        "dataId": "input-new-002",
+        "contractId": "qwb.trade-input",
+        "contractVersion": "1.0.0",
+        "revision": "1"
+      },
+      "bookingId": "DRAFT-new-002",
+      "origin": "new",
+      "tradeType": "IRS",
+      "cashflowCurrencies": [
+        "USD"
+      ],
+      "maturity": "2031-10-23",
+      "metDate": null,
+      "nettingSetId": "NS-001",
+      "csaId": "CSA-A",
+      "discountCurveId": "CURVE-USD-MANUAL",
+      "includeBefore": false,
+      "includeAfter": true,
+      "collateralization": "collateralized"
+    }
+  ],
+  "scenarios": [
+    {
+      "scenarioId": "base",
+      "kind": "base",
+      "label": "Base",
+      "shocks": []
+    }
+  ],
+  "calculation": {
+    "mode": "individualAddition",
+    "candidateTradeInstanceIds": [
+      "new-001",
+      "new-002"
+    ],
+    "requestedMeasures": [
+      "CVA",
+      "DVA",
+      "FVA",
+      "MVA"
+    ],
+    "displayCurrency": "USD",
+    "requestRisk": false,
+    "modelConfigRef": "model-config-demo-001"
+  },
+  "provenance": [
+    {
+      "targetType": "tradeInstance",
+      "targetId": "new-002",
+      "field": "csaId",
+      "source": "manual",
+      "previousValue": "CSA-B",
+      "value": "CSA-A",
+      "editRevision": 16
+    },
+    {
+      "targetType": "tradeInstance",
+      "targetId": "new-002",
+      "field": "discountCurveId",
+      "source": "manual",
+      "previousValue": "CURVE-USD-CSA-A",
+      "value": "CURVE-USD-MANUAL",
+      "editRevision": 17
+    }
+  ],
+  "synthetic": true
+}

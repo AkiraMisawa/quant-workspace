@@ -1,0 +1,101 @@
+{
+  "documentType": "workflow",
+  "schemaVersion": "1.0.0",
+  "definitionId": "workflow.simm-compare",
+  "version": "1.0.0",
+  "title": "Compare incremental SIMM across resolved contexts",
+  "inputContractId": "qwb.margin.comparison-input",
+  "inputContractVersion": "1.0.0",
+  "steps": [
+    {
+      "stepId": "prepare",
+      "capabilityId": "portfolio.prepareComparisonSides",
+      "capabilityVersion": "1.0.0",
+      "dependsOn": [],
+      "bindings": {
+        "comparison": {
+          "kind": "input",
+          "path": ""
+        }
+      },
+      "failurePolicy": "stop"
+    },
+    {
+      "stepId": "crif",
+      "capabilityId": "risk.crif.generate",
+      "capabilityVersion": "1.0.0",
+      "dependsOn": [
+        "prepare"
+      ],
+      "forEach": {
+        "kind": "output",
+        "stepId": "prepare",
+        "port": "portfolioSides"
+      },
+      "maxConcurrency": 3,
+      "bindings": {
+        "portfolioSide": {
+          "kind": "item",
+          "path": ""
+        }
+      },
+      "failurePolicy": "collect",
+      "itemMode": "value",
+      "itemKeyPath": "/itemKey"
+    },
+    {
+      "stepId": "simm",
+      "capabilityId": "margin.simm.calculate",
+      "capabilityVersion": "1.0.0",
+      "dependsOn": [
+        "crif"
+      ],
+      "forEach": {
+        "kind": "output",
+        "stepId": "crif",
+        "port": "crif"
+      },
+      "maxConcurrency": 3,
+      "bindings": {
+        "crif": {
+          "kind": "item",
+          "path": ""
+        }
+      },
+      "failurePolicy": "collect",
+      "itemMode": "outcomeValue"
+    },
+    {
+      "stepId": "compare",
+      "capabilityId": "margin.compareResults",
+      "capabilityVersion": "1.0.0",
+      "dependsOn": [
+        "simm"
+      ],
+      "bindings": {
+        "results": {
+          "kind": "output",
+          "stepId": "simm",
+          "port": "result"
+        },
+        "plannedComparison": {
+          "kind": "input",
+          "path": ""
+        }
+      },
+      "failurePolicy": "stop"
+    }
+  ],
+  "outputs": {
+    "comparison": {
+      "kind": "output",
+      "stepId": "compare",
+      "port": "comparison"
+    },
+    "crifSides": {
+      "kind": "output",
+      "stepId": "crif",
+      "port": "crif"
+    }
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "documentType": "capabilityCatalog",
+  "schemaVersion": "1.0.0",
+  "capabilities": [
+    {
+      "capabilityId": "portfolio.prepareComparisonSides",
+      "version": "1.0.0",
+      "title": "Prepare fixed portfolio sides",
+      "inputPorts": [
+        {
+          "name": "comparison",
+          "contractId": "qwb.margin.comparison-input",
+          "contractVersion": "1.0.0",
+          "cardinality": "one"
+        }
+      ],
+      "outputPorts": [
+        {
+          "name": "portfolioSides",
+          "contractId": "qwb.portfolio-side",
+          "contractVersion": "1.0.0",
+          "cardinality": "many"
+        }
+      ],
+      "executionKind": "requestResponse",
+      "effects": [
+        "readData",
+        "compute",
+        "persistAnalysis"
+      ]
+    },
+    {
+      "capabilityId": "risk.crif.generate",
+      "version": "1.0.0",
+      "title": "Generate CRIF for one prepared side",
+      "inputPorts": [
+        {
+          "name": "portfolioSide",
+          "contractId": "qwb.portfolio-side",
+          "contractVersion": "1.0.0",
+          "cardinality": "one"
+        }
+      ],
+      "outputPorts": [
+        {
+          "name": "crif",
+          "contractId": "qwb.crif-reference",
+          "contractVersion": "1.0.0",
+          "cardinality": "one"
+        }
+      ],
+      "executionKind": "job",
+      "effects": [
+        "readData",
+        "compute",
+        "persistAnalysis"
+      ]
+    },
+    {
+      "capabilityId": "margin.simm.calculate",
+      "version": "1.0.0",
+      "title": "Calculate SIMM from CRIF",
+      "inputPorts": [
+        {
+          "name": "crif",
+          "contractId": "qwb.crif-reference",
+          "contractVersion": "1.0.0",
+          "cardinality": "one"
+        }
+      ],
+      "outputPorts": [
+        {
+          "name": "result",
+          "contractId": "qwb.simm-side-result",
+          "contractVersion": "1.0.0",
+          "cardinality": "one"
+        }
+      ],
+      "executionKind": "job",
+      "effects": [
+        "readData",
+        "compute",
+        "persistAnalysis"
+      ]
+    },
+    {
+      "capabilityId": "margin.compareResults",
+      "version": "1.0.0",
+      "title": "Pair results and compare SIMM",
+      "inputPorts": [
+        {
+          "name": "results",
+          "contractId": "qwb.simm-side-outcome",
+          "contractVersion": "1.0.0",
+          "cardinality": "many"
+        },
+        {
+          "name": "plannedComparison",
+          "contractId": "qwb.margin.comparison-input",
+          "contractVersion": "1.0.0",
+          "cardinality": "one"
+        }
+      ],
+      "outputPorts": [
+        {
+          "name": "comparison",
+          "contractId": "qwb.simm-comparison-dataset",
+          "contractVersion": "1.0.0",
+          "cardinality": "one"
+        }
+      ],
+      "executionKind": "requestResponse",
+      "effects": [
+        "readData",
+        "compute",
+        "persistAnalysis"
+      ]
+    }
+  ]
+}

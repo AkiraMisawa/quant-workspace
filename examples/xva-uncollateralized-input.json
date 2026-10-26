@@ -1,0 +1,163 @@
+{
+  "documentType": "xvaSubmission",
+  "schemaVersion": "1.0.0",
+  "idempotencyKey": "submit-demo-uncollateralized",
+  "workspaceId": "workspace-demo-001",
+  "workspaceRevision": 17,
+  "context": {
+    "valueDate": "2026-10-23",
+    "counterpartyRegistrationId": "registration-DEMO-UK",
+    "counterpartyCode": "DEMO",
+    "legalEntityCode": "UK",
+    "mainMasterAgreementId": "MA-001",
+    "mainNettingSetId": "NS-001",
+    "mainCsaId": "nocsa_MA-001",
+    "defaultCollateralization": "uncollateralized"
+  },
+  "baselineSnapshotId": "baseline-demo-uncollateralized-001",
+  "marketSnapshotId": "market-demo-jpy-001",
+  "credit": {
+    "mode": "proxy",
+    "proxyAttributes": {
+      "region": "Europe",
+      "sector": "Financials",
+      "rating": "A"
+    },
+    "curves": [
+      {
+        "curveId": "credit-demo-001",
+        "ticker": null,
+        "currency": "USD",
+        "seniority": "SeniorUnsecured",
+        "docClause": "DEMO-DOC",
+        "cdsRecovery": 0.4,
+        "quotes": [
+          {
+            "tenor": "6M",
+            "spreadBps": 45
+          },
+          {
+            "tenor": "1Y",
+            "spreadBps": 55
+          },
+          {
+            "tenor": "5Y",
+            "spreadBps": 90
+          },
+          {
+            "tenor": "20Y",
+            "spreadBps": 120
+          }
+        ]
+      }
+    ],
+    "cvaRecoveryOverride": null
+  },
+  "nettingSets": [
+    {
+      "nettingSetId": "NS-001",
+      "masterAgreementId": "MA-001",
+      "closeoutNettingEnforceable": true,
+      "isMain": true
+    }
+  ],
+  "csas": [],
+  "trades": [
+    {
+      "tradeInstanceId": "existing-001",
+      "tradeInput": {
+        "dataId": "input-jpy-existing-001",
+        "contractId": "qwb.trade-input",
+        "contractVersion": "1.0.0",
+        "revision": "1"
+      },
+      "bookingId": "DEMO-JPY-existing-001",
+      "origin": "existing",
+      "tradeType": "IRS",
+      "cashflowCurrencies": [
+        "JPY"
+      ],
+      "maturity": "2031-10-23",
+      "metDate": null,
+      "nettingSetId": "NS-001",
+      "csaId": "nocsa_MA-001",
+      "discountCurveId": "jpy_ois",
+      "includeBefore": true,
+      "includeAfter": true,
+      "collateralization": "uncollateralized"
+    },
+    {
+      "tradeInstanceId": "new-001",
+      "tradeInput": {
+        "dataId": "input-jpy-new-001",
+        "contractId": "qwb.trade-input",
+        "contractVersion": "1.0.0",
+        "revision": "1"
+      },
+      "bookingId": "DEMO-JPY-new-001",
+      "origin": "new",
+      "tradeType": "IRS",
+      "cashflowCurrencies": [
+        "JPY"
+      ],
+      "maturity": "2031-10-23",
+      "metDate": null,
+      "nettingSetId": "NS-001",
+      "csaId": "nocsa_MA-001",
+      "discountCurveId": "jpy_ois",
+      "includeBefore": false,
+      "includeAfter": true,
+      "collateralization": "uncollateralized"
+    },
+    {
+      "tradeInstanceId": "new-002",
+      "tradeInput": {
+        "dataId": "input-jpy-new-002",
+        "contractId": "qwb.trade-input",
+        "contractVersion": "1.0.0",
+        "revision": "1"
+      },
+      "bookingId": "DEMO-JPY-new-002",
+      "origin": "new",
+      "tradeType": "IRS",
+      "cashflowCurrencies": [
+        "JPY"
+      ],
+      "maturity": "2031-10-23",
+      "metDate": null,
+      "nettingSetId": "NS-001",
+      "csaId": "nocsa_MA-001",
+      "discountCurveId": "jpy_ois",
+      "includeBefore": false,
+      "includeAfter": true,
+      "collateralization": "uncollateralized"
+    }
+  ],
+  "scenarios": [
+    {
+      "scenarioId": "base",
+      "kind": "base",
+      "label": "Base",
+      "shocks": []
+    }
+  ],
+  "calculation": {
+    "mode": "individualAddition",
+    "candidateTradeInstanceIds": [
+      "new-001",
+      "new-002"
+    ],
+    "requestedMeasures": [
+      "CVA",
+      "DVA",
+      "FVA",
+      "MVA"
+    ],
+    "displayCurrency": "USD",
+    "requestRisk": false,
+    "modelConfigRef": "model-config-demo-001"
+  },
+  "provenance": [],
+  "synthetic": true,
+  "defaultsProfileRef": "pricing-defaults-demo-jpy-v1"
+}
