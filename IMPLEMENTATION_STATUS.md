@@ -181,7 +181,7 @@ The provider and the market are simulated. Real holiday calendars, the confirmed
 - One command line, opened with Ctrl+K anywhere and with `/` where `/` would not be typed (not in a text field, a grid, or the AI chat, whose slash commands are its own). Commands are English words for what they do; typing shows the matching commands, best first: words typed in full, words that start with the query, words whose starts follow the query in order (`op pr` → `open pricing db`), then words or titles that contain it. Among equal matches what the user ran most and lately comes first, so a few letters find it; `?` lists what can run now.
 - Each command shows what it acts on (the active panel) and why it cannot run if it cannot. A chosen command shows its arguments as slots: required ones in order, optional ones as `name=value`. The slot being typed lists its valid values; Tab takes one, Enter runs, and Enter with a slot missing names it and runs nothing.
 - `new irs <currency> <index> <end> <notional> <direction> <fixed-frequency> <float-frequency> [rate=] [spread=]` makes a line in the active Rates workspace in one edit, at the revision the page saw (`POST /api/rates/workspaces/{id}/lines/terms`); currency and index complete from the configured conventions (`GET /api/rates/conventions`), the end, direction and frequencies from what the grid accepts, and a notional may be written `3bn` or `500m`. `add line <irs|ccs>`, `price` (XVA or Rates, by the active panel), `live start`, `live stop`, `capture`, `new xva`, `new rates`, `open pricing db`, `run <workflow>`, `show <view>`, `set <context field> <value>`, `toggle theme`.
-- `ai <request>` is a command and the last hint when nothing matches; no AI runtime is connected, so it says so and sends nothing.
+- `ai <request>` is a command, and Enter on a line that matches no command asks the AI with what was typed (the AI pane below).
 - Domain chords (New XVA, Price XVA, New Rates, Pricing DB, theme) are gone.
 
 ### Verification performed
@@ -197,7 +197,41 @@ The provider and the market are simulated. Real holiday calendars, the confirmed
 - Frequency ranking is kept in the browser until the user settings store arrives with sign-in (C30).
 - `new ccs` with terms is not there yet: `add line ccs` adds an empty line to fill in the grid.
 - New XVA and New Rates still open their dialogs rather than taking their arguments on the line.
-- The AI pane does not exist; `ai` sends nothing.
+
+## The AI pane (ADR-0007, proposed 2026-10-27)
+
+### What runs
+
+- **AG-UI** (`Workbench.Agent`, `/api/agent/...`): the pane posts AG-UI's `RunAgentInput` to `POST /api/agent/runs` and reads the run's events as server-sent events, in the shapes of `@ag-ui/core` 1.0.3 (protocol 1.0). The server holds the conversation per thread and owner and takes only new user messages from the client; frontend tools and client-written history are refused. A run goes on when its reader leaves; `GET /api/agent/threads/{t}/runs/{r}/events?after=n` reads the rest, `GET /api/agent/threads/{t}` reads the messages, `POST …/cancel` stops a run before its next tool call. The same run id posted again is read again, never run twice. An agent run is not a workbench Run.
+- **Tools**: one per registered command capability (ADR-0005), named by its id with `_` (`rates_line_create`), whose parameters are its input contracts. A call goes through `CommandService` for `Caller(user, ai)` with the key `agent:{thread}:{toolCall}`; its result is the outputs or every issue of the refusal.
+- **Runtime port** `IAgentRuntime`, chosen by `Agent:Runtime`; anything but a configured runtime stops startup. The only runtime is `scripted` (**no model**, labelled `scripted · no model` in the pane and on every card): modules register the requests it understands. Rates registers an IRS from the terms a request writes (currency, index, end, notional, direction, `fixed 12m float 3m`, `rate 1.2%` or `spread 0`, a valuation date or the open workspace), `start ticking` and `stop ticking`. It fills only stated terms (an index names its currency), stops at a refusal and asks for what it names; the answer is joined to the refused request unless it asks for that thing afresh, so "pay fixed, fixed 12m float 12m, spread 0 and start ticking" completes the swap and ticks it.
+- **Copilot runtime** (`Agent:Runtime=copilot`, C44, C46): `CopilotAgentRuntime` posts each turn to the **agent host** (`Workbench.AgentHost`, a process of its own on `127.0.0.1:5395`, behind a shared key) and reads its answer as JSON lines (words, a tool call, the end, a failure); each call is invoked by the loop for the user and its result posted back, and cancelling a run aborts the host's turn. The host runs `GitHub.Copilot.SDK` 1.0.27 (CLI 1.0.104) in its empty mode: no built-in tool, only the workbench's tools, every other permission rejected, one session per thread. Its token comes from its own environment or a file; the workbench is started without it. `tools/run-with-copilot.sh` starts both, optionally with the host as another OS user; `docs/running-with-copilot.md` says how, and how to reach it over Tailscale.
+- **Client** (`client/src/ai/`): the AI pane on the right (a full-screen drawer below 768 px), one card per request with each tool call, its outcome and the reply, a runtime badge, and the chat input with its own `/` commands (`/new`, `/stop`, `/help`, `/close`; the command line's `/` stays out of the chat). `ai <request>` and `open ai pane` / `close ai pane` are commands, and the header has an AI button. The active panel's app gives the context (an open Rates workspace); a result's app effect opens the workspace a new line is in **behind** the active panel, with a Show button on the card, and refreshes what live start and stop changed. Nothing the AI does moves the keyboard.
+
+### Verification performed
+
+| Suite | Result |
+|---|---|
+| `dotnet test server/Workbench.slnx` | 145 passed (7: commands through AG-UI, asking for missing terms and completing them, read again rather than run twice, client tools and history refused, an invented tool refused, cancel, an unknown runtime stops startup; 7 for Copilot with a fake model behind the real host: a model's call runs as the user's command, the conversation goes with each turn, an invented tool is refused back to the model, cancel aborts the model's turn, a model failure ends the run with its message, the host refuses a caller without the key and will not start without one, `copilot` without its settings stops startup) |
+| `tools/run-with-copilot.sh` in the container | The host and the workbench start; the SDK's runtime starts; a run with a made-up token ends in `RUN_ERROR` carrying the SDK's message ("No GitHub OAuth token or Copilot HMAC key provided"). No real model was reached. |
+| `npm test` (Vitest) | 42 passed (6 new: cards from events, a failed run, the request sent alone with its context, an effect applied once, busy refusals, chat commands) |
+| `npx playwright test` (Chromium, headless, Linux) | 13 passed; the three AI tests with `--repeat-each=3` (9 passed). Every event of a run is parsed with `@ag-ui/core`'s own schemas. |
+
+| Acceptance | Status |
+|---|---|
+| AI01 (real agent) | Not met yet: the Copilot runtime is built, but no real model has answered through it (needs the owner's token, on the owner's machine). |
+| AI04 (reconnect) | Application part passed (xUnit: a run is read again and from a position, never run twice). A browser reconnect is not tested. |
+| AI06 (no unregistered path) | Passed for tools (xUnit: client tools refused, an invented tool refused without running). Views are not generated by the agent yet. |
+
+### Known limits
+
+- The Copilot runtime has not met a real model. With a made-up token the SDK reports "No GitHub OAuth token or Copilot HMAC key provided"; whether a real fine-grained token gets past that is the first thing to check on the owner's machine.
+- The company's GitHub App (C45) is not wired: its hour-long installation token would need the host's SDK client restarted to refresh.
+- The SDK's session lives in the host's memory; a host restart starts a new session, told the conversation so far as text.
+- Threads and runs are held in memory; a restart loses them (the commands' effects are in the workspace log as before).
+- A tool result card shows the command's outputs as JSON.
+- The agent cannot run workflows (Runs) or read data yet; it has the three Rates commands.
+- XVA registers no command, so the agent cannot act on an XVA workspace.
 
 ## Next
 

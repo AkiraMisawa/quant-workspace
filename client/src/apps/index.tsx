@@ -13,6 +13,7 @@ import { RatesWorkspacePanel } from './rates/RatesWorkspacePanel';
 import { httpXvaApi, type XvaApi } from './xva/api';
 import { priceOf } from './xva/commands';
 import { XvaWorkspacePanel } from './xva/XvaWorkspacePanel';
+import { registerAiContext, registerAiEffect } from '../ai/effects';
 
 // The fixed applications (docs/01): pages a domain offers beside the composed workflows. Each is reached
 // through commands, so the command line and a button cannot differ (ADR-0006).
@@ -34,6 +35,25 @@ let ratesApi: RatesApi = httpRatesApi;
 export function setRatesApi(api: RatesApi): void {
   ratesApi = api;
 }
+
+// What the AI pane knows of Rates (ADR-0007 §7, §8): an open workspace is the context a request acts on, a line the AI
+// creates opens its workspace behind the active panel, and what the AI changes is fetched again where it is shown.
+registerAiContext(RATES_WORKSPACE, (panel) => panel.params.workspaceId === undefined ? undefined : {
+  description: 'The Rates workspace open in the active panel',
+  value: JSON.stringify({ kind: 'rates.workspace', workspaceId: panel.params.workspaceId }),
+});
+registerAiEffect('rates.line.create', (outputs, { workspace, queryClient }) => {
+  const line = outputs.line as { readonly workspaceId: string; readonly valuationDate: string };
+  void queryClient.invalidateQueries({ queryKey: ['rates', line.workspaceId] });
+  const title = `Rates ${line.valuationDate}`;
+  return { panelId: workspace.openPanelBehind(RATES_WORKSPACE, title, { workspaceId: line.workspaceId }), title };
+});
+for (const capability of ['rates.live.start', 'rates.live.stop'])
+  registerAiEffect(capability, (outputs, { queryClient }) => {
+    const subscription = outputs.subscription as { readonly workspaceId: string };
+    void queryClient.invalidateQueries({ queryKey: ['rates', subscription.workspaceId] });
+    return undefined;
+  });
 
 export function AppPanel({ panel }: { readonly panel: Extract<Panel, { kind: 'app' }> }): ReactNode {
   switch (panel.app) {
