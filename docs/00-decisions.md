@@ -42,6 +42,9 @@ Status: **CONFIRMED** = explicit user requirement or supplied operational fact. 
 | C34 | (2026-10-27) The company's agent is GitHub Copilot, with several selectable models. The agent runtime and model therefore stay behind the adapter port (D10); no model is assumed. |
 | C35 | (2026-10-27) Production also starts on SQLite. Supersedes the "production DB open" part of D04 for the first rollout; HA and multi-instance stay open. |
 | C36 | (2026-10-27) Touch support waits for ExGrid's touch release (expected within a day of this date); the workbench does not build its own touch handling for the grid meanwhile. |
+| C37 | (2026-10-27) The Rates page is a line pricer: interest-rate swaps, cross-currency swaps and swaptions are each defined on one grid row. Swaptions extend C15; their product scope, volatility model and conventions are OPEN. |
+| C38 | (2026-10-27) The line pricer calculates PV, the par rate (or the fair spread, with its target leg) and risk. Which risk measures, with which bumps, is OPEN. Products that can tick also tick in real time, as C15 requires; manual pricing remains. |
+| C39 | (2026-10-27) A sparse one-line definition generates a standard cashflow schedule, which is what is priced. Each row's detail panel shows that schedule and lets the user customise its cashflows. Which fields are customisable, and what happens to customised cashflows when the one-line terms change, is OPEN; the proposal is ADR-0003 §7's carry check (carried, conflicted, lost) over the generated schedule. |
 
 ## Recommended initial choices
 

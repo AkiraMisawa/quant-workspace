@@ -4,6 +4,7 @@
     <Project Path="src/Workbench.Composition.Contracts/Workbench.Composition.Contracts.csproj" />
     <Project Path="src/Workbench.Samples.Synthetic/Workbench.Samples.Synthetic.csproj" />
     <Project Path="src/Workbench.Samples.Xva/Workbench.Samples.Xva.csproj" />
+    <Project Path="src/Workbench.Samples.Rates/Workbench.Samples.Rates.csproj" />
     <Project Path="src/Workbench.Persistence.Sqlite/Workbench.Persistence.Sqlite.csproj" />
     <Project Path="src/Workbench.Web/Workbench.Web.csproj" />
   </Folder>

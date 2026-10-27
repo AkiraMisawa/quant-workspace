@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\src\Workbench.Composition.Application\Workbench.Composition.Application.csproj" />
     <ProjectReference Include="..\..\src\Workbench.Samples.Synthetic\Workbench.Samples.Synthetic.csproj" />
     <ProjectReference Include="..\..\src\Workbench.Samples.Xva\Workbench.Samples.Xva.csproj" />
+    <ProjectReference Include="..\..\src\Workbench.Samples.Rates\Workbench.Samples.Rates.csproj" />
     <ProjectReference Include="..\..\src\Workbench.Persistence.Sqlite\Workbench.Persistence.Sqlite.csproj" />
     <ProjectReference Include="..\..\src\Workbench.Web\Workbench.Web.csproj" />
   </ItemGroup>
