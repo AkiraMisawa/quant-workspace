@@ -64,8 +64,8 @@ idempotency keys through the application executor, and a scripted transcript lab
 - A new project `Workbench.Agent` holds the AG-UI events, threads, the loop, the tool gateway, the runtime port and the
   scripted runtime. It knows no domain; the Rates module registers its scripted requests.
 - The Copilot adapter is one more `IAgentRuntime`, configured in the composition root, talking to a separate agent
-  process built on the Copilot SDK (C44). How that process authenticates its service account, and where it runs, is
-  OPEN with the owner.
+  process built on the Copilot SDK (C44). That process authenticates as a GitHub App installation with the Copilot
+  Requests permission only and runs beside the web server on its machine (C45).
 - docs/11 AI04 (reconnect) and AI06 (no unregistered path) gain an application part; AI01 needs a real runtime.
 
 ## Rejected
