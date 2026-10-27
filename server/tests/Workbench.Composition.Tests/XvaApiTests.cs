@@ -154,7 +154,7 @@ public class XvaApiTests(WorkbenchFactory factory) : IClassFixture<WorkbenchFact
     [Fact] // Spine 1: a domain nobody registered is refused rather than shown as an empty history
     public async Task An_unknown_history_domain_is_refused()
     {
-        var response = await client.PostAsJsonAsync("/api/history/rows", new { domain = "rates", start = 0, count = 10 });
+        var response = await client.PostAsJsonAsync("/api/history/rows", new { domain = "fx", start = 0, count = 10 });
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }

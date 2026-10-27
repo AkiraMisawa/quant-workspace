@@ -122,6 +122,40 @@ Every provider is simulated and every figure synthetic, labelled `simulated` in 
 - Run views are matched to Runs by output name, not by contract.
 - Touch waits for ExGrid's touch release (C36).
 
+## Slice 03: the Rates line pricer (server side so far)
+
+Plan: [docs/plans/slice-03-rates-line-pricer.md](docs/plans/slice-03-rates-line-pricer.md). Decisions: C37 to C43 in `docs/00-decisions.md`, ADR-0004 (accepted 2026-10-27).
+
+### What runs
+
+- **Kernel (ADR-0004)**: entities the user creates (`Create`, `Remove`), sources a module derives from the workspace (`IEditRules.Derive`, one scope per line), a Derive log entry with its carry summary whenever a derived source moves, and derivation again on load.
+- **Rates module** (`Workbench.Samples.Rates`): a line's flat fields (C40, C43) read into typed terms; a resolver that refuses what it cannot honour on the row; a standard schedule generator; a schedule per line as a derived source whose periods are identified by leg and unadjusted dates, so cashflow edits carry, conflict or are lost when the terms move.
+- **Pricing**: `IRatesPricingProvider` with the fake provider (`fake-rates/1`, every figure `simulated`): PV, the par rate or fair spread of the leg left without a quote, and 1bp pillar deltas when the row asks for risk, standing in for the engine's AD sensitivities (C38). A seeded synthetic market whose snapshot n is a function of its configuration.
+- **Price** (`rates.price`): freezes the revision the user saw, prices its priceable lines against the snapshot the request names (an unknown one is refused), lists every other line as `notPriced` with its reasons, and refuses when nothing is priceable. One Run per Price.
+- **Live**: subscriptions price the newest market with at most one calculation in flight and the newest update waiting; an accepted edit moves a subscription to its revision; a frame names its subscription revision, input revision and snapshot. No Run per tick. Frames stream as server-sent events.
+- **Capture** (`rates.capture`): saves the frame the user saw as a Run, with its own snapshot, refused (`FrameMoved`) when another frame is shown by then.
+- **HTTP**: `/api/rates/market`, `/api/rates/workspaces/...` (create, view, add, edit, remove a line, cashflows and cashflow edits, resolutions, valuation date, price, start live, delete), `/api/rates/live/{id}/frames|capture`.
+- **Pricing DB**: the Rates view lists one row per Run: valuation date, price or capture, snapshot, lines priced, failed and not priced, execution mode.
+- **Configuration**: convention profiles and the synthetic market are configuration (`Rates` section). None is configured by default. `appsettings.Development.json` carries the convention table proposed on 2026-10-27, still unconfirmed, on a weekends-only calendar: its profile version says `unconfirmed` and every row names its profiles.
+
+### Verification performed
+
+| Suite | Result |
+|---|---|
+| `dotnet test server/Workbench.slnx` | 120 passed; the Rates tests (56) three times |
+| `dotnet run` (Development) | Started; `/api/rates/market` advanced with the ticker |
+
+### Providers
+
+The provider and the market are simulated. Real holiday calendars, the confirmed convention table and a real worker are not wired.
+
+### Known limits
+
+- The convention table, the risk factors to report against and the meaning of "FX Forward (pts)" are open with the owner.
+- The Pricing DB lists Rates Runs, not a row per line.
+- Snapshots are kept for the life of the process.
+- No client page yet: the line grid, the detail panel and the live bar come next. The leg header that expands its second level needs an ExGrid change (spec of 2026-10-27); until then the toggle sits outside the grid.
+
 ## Next
 
 1. The owner's review of ADR-0003 §7 (scopes, carry and conflict), then a synthetic source change that can produce a conflict, and the browser cases still open above (reload, failed case unavailable).

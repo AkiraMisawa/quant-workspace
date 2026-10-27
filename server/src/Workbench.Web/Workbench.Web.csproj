@@ -4,6 +4,7 @@
     <ProjectReference Include="..\Workbench.Composition.Application\Workbench.Composition.Application.csproj" />
     <ProjectReference Include="..\Workbench.Samples.Synthetic\Workbench.Samples.Synthetic.csproj" />
     <ProjectReference Include="..\Workbench.Samples.Xva\Workbench.Samples.Xva.csproj" />
+    <ProjectReference Include="..\Workbench.Samples.Rates\Workbench.Samples.Rates.csproj" />
     <ProjectReference Include="..\Workbench.Persistence.Sqlite\Workbench.Persistence.Sqlite.csproj" />
   </ItemGroup>
 

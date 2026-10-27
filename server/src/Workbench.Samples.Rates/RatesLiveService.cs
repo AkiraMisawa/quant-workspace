@@ -12,10 +12,16 @@ public sealed record LiveDelivery(
     string Provider,
     string CalculationMode,
     IReadOnlyList<RowResult> Rows,
-    IReadOnlyList<string> NotPriced);
+    IReadOnlyList<NotPricedLine> NotPriced);
+
+/// <summary>A line left out of a calculation, with why: shown beside the figures, never as a zero.</summary>
+public sealed record NotPricedLine(string Line, IReadOnlyList<string> Reasons);
 
 /// <summary>The input a subscription prices: the priceable lines of one revision, and the lines left out with why.</summary>
-public sealed record LiveInput(long Revision, DateOnly ValuationDate, IReadOnlyList<PricingLine> Lines, IReadOnlyList<string> NotPriced);
+public sealed record LiveInput(long Revision, DateOnly ValuationDate, IReadOnlyList<PricingLine> Lines, IReadOnlyList<NotPricedLine> NotPriced);
+
+/// <summary>The frame a subscription shows now, with the exact input it was calculated from: what capture saves.</summary>
+public sealed record ShownFrame(LiveDelivery Delivery, LiveInput Input);
 
 /// <summary>
 /// Runs live subscriptions (docs/07 §4, §6): each market update reaches every running subscription, whose rules
@@ -31,6 +37,7 @@ public sealed class RatesLiveService(IRatesPricingProvider provider, Func<string
         public string WorkspaceId { get; } = workspaceId;
         public LiveInput Input { get; set; } = input;
         public Dictionary<long, LiveInput> Inputs { get; } = new() { [input.Revision] = input };
+        public ShownFrame? Shown { get; set; }
         public Channel<LiveDelivery> Out { get; } = Channel.CreateBounded<LiveDelivery>(
             new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
     }
@@ -59,13 +66,17 @@ public sealed class RatesLiveService(IRatesPricingProvider provider, Func<string
         return id;
     }
 
-    /// <summary>The accepted input moved through the edit path; the subscription now prices the new revision only.</summary>
+    /// <summary>
+    /// The accepted input moved through the edit path; the subscription now prices the new revision only. Two
+    /// edits may report out of order; a revision no newer than the current one is superseded and ignored.
+    /// </summary>
     public void InputChanged(string owner, string subscriptionId, LiveInput input)
     {
         LiveWork? work;
         lock (gate)
         {
             var entry = Owned(owner, subscriptionId);
+            if (input.Revision <= entry.Rules.InputRevision) return;
             entry.Input = input;
             entry.Inputs[input.Revision] = input;
             work = entry.Rules.OnInputChanged(input.Revision);
@@ -89,6 +100,30 @@ public sealed class RatesLiveService(IRatesPricingProvider provider, Func<string
     public ChannelReader<LiveDelivery> Frames(string owner, string subscriptionId)
     {
         lock (gate) return Owned(owner, subscriptionId).Out.Reader;
+    }
+
+    /// <summary>The running subscriptions on a workspace, by owner, for the edit path to report a new input to.</summary>
+    public IReadOnlyList<(string Owner, string SubscriptionId)> OnWorkspace(string workspaceId)
+    {
+        lock (gate) return [.. subscriptions.Where(s => s.Value.WorkspaceId == workspaceId).Select(s => (s.Value.Rules.Owner, s.Key))];
+    }
+
+    /// <summary>The frame shown now and its input, or null before the first one.</summary>
+    public ShownFrame? Shown(string owner, string subscriptionId)
+    {
+        lock (gate) return Owned(owner, subscriptionId).Shown;
+    }
+
+    /// <summary>The workspace a subscription prices.</summary>
+    public string WorkspaceOf(string owner, string subscriptionId)
+    {
+        lock (gate) return Owned(owner, subscriptionId).WorkspaceId;
+    }
+
+    /// <summary>The newest market update published, or null before the first.</summary>
+    public MarketUpdate? Latest
+    {
+        get { lock (gate) return latest; }
     }
 
     public Task PublishAsync(MarketUpdate update)
@@ -151,8 +186,12 @@ public sealed class RatesLiveService(IRatesPricingProvider provider, Func<string
             if (!subscriptions.TryGetValue(work.SubscriptionId, out var entry)) return;
             (var outcome, next) = entry.Rules.OnCompleted(frame);
             if (outcome == FrameOutcome.Applied)
-                entry.Out.Writer.TryWrite(new LiveDelivery(work.SubscriptionId, work.SubscriptionRevision, work.InputRevision, work.Market,
-                    frame.CompletedAt, result.Provider, result.CalculationMode, result.Rows, input.NotPriced));
+            {
+                var delivery = new LiveDelivery(work.SubscriptionId, work.SubscriptionRevision, work.InputRevision, work.Market,
+                    frame.CompletedAt, result.Provider, result.CalculationMode, result.Rows, input.NotPriced);
+                entry.Shown = new ShownFrame(delivery, input);
+                entry.Out.Writer.TryWrite(delivery);
+            }
             foreach (var old in entry.Inputs.Keys.Where(r => r < entry.Rules.InputRevision && entry.Rules.InFlight?.InputRevision != r).ToList())
                 entry.Inputs.Remove(old);
         }
