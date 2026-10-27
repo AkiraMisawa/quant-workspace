@@ -2,6 +2,8 @@
 // (server/src/Workbench.Samples.Rates, server/src/Workbench.Web/RatesApi.cs). Figures are simulated and the
 // market synthetic; the shapes are the contract.
 
+import type { RunOrigin } from '../../platform/contracts';
+
 export type Resolution = 'reset' | 'keep' | 'takeSource' | 'acknowledge';
 
 export interface LineView {
@@ -61,6 +63,9 @@ export interface LiveStatus {
   /** As .NET writes a TimeSpan: `hh:mm:ss`. */
   readonly idleLimit: string;
   readonly lastFrame?: LiveFrame;
+  /** Who started it and, when the user stopped it, from where: the page or the AI acting for the user (ADR-0005). */
+  readonly startedFrom: RunOrigin;
+  readonly stoppedFrom?: RunOrigin;
 }
 
 export interface PeriodView {

@@ -134,6 +134,7 @@ Plan: [docs/plans/slice-03-rates-line-pricer.md](docs/plans/slice-03-rates-line-
 - **Price** (`rates.price`): freezes the revision the user saw, prices its priceable lines against the snapshot the request names (an unknown one is refused), lists every other line as `notPriced` with its reasons, and refuses when nothing is priceable. One Run per Price.
 - **Live**: subscriptions price the newest market with at most one calculation in flight and the newest update waiting; an accepted edit moves a subscription to its revision; a frame names its subscription revision, input revision and snapshot. No Run per tick. Frames stream as server-sent events. A workspace has one subscription on the server; pages attach to it (a new page first hears the frame shown now) and detach when they go. Once nobody has watched it for `Rates:LiveIdleStopSeconds` (300 by default), the next tick stops it and the workspace records why; a page opening on it then shows the last frame and offers Resume, which starts a new subscription on the current revision (owner, 2026-10-27).
 - **Capture** (`rates.capture`): saves the frame the user saw as a Run, with its own snapshot, refused (`FrameMoved`) when another frame is shown by then.
+- **Commands (ADR-0005, accepted 2026-10-27)**: the kernel's `EditWorkspace` and `Subscribe` effects mark a capability as a command, invoked through `CommandService` for a `Caller` the server sets (user and origin), outside Runs, with an idempotency key (held in memory); the validator refuses a command as a workflow step. Edit log entries record their origin (a nullable `origin` column, added to an older log on open). The Rates commands are `rates.line.create` (one line from the grid's own terms, in a workspace of the caller's or a new one at the valuation date given; every missing term refused by name, any reason the line could not be priced refused before anything is written), `rates.live.start` (starts or joins the workspace's subscription) and `rates.live.stop`; the live status says whether the page or the AI started and stopped it. They are reached at `POST /api/agent/commands/{capability}/{version}`, the route the agent's tool calls take, with origin `ai`; no agent runtime calls it yet.
 - **HTTP**: `/api/rates/market`, `/api/rates/workspaces/...` (create, view, add, edit, remove a line, cashflows and cashflow edits, resolutions, valuation date, price, start live, delete), `/api/rates/live/{id}/frames|capture`.
 - **Pricing DB**: the Rates view lists one row per Run: valuation date, price or capture, snapshot, lines priced, failed and not priced, execution mode.
 - **Client**: the Rates page (`New Rates workspace`, Ctrl+Alt+R). One ExGrid row per line, keyed by line, with Header Groups over Result, Trade, Leg 1, Leg 2 and Terms; the line and its actions (Cashflows, Remove) are pinned. Cells the user set, held edits, lines that cannot be priced and figures of an older revision are painted as Cell States with their reasons. Each leg's second level (C43) opens and closes from a button beside the grid, and the group's caption says which. Cashflows opens a second ExGrid over the line's periods, whose dates, notional and rate are editable, with its notional exchanges below. Start live and Stop live, Capture, and Price (against the snapshot shown) are buttons and the palette commands `Price Rates workspace`, `Start or stop Rates live` and `Capture Rates live frame`. The edit queue the XVA page used is now generic and shared.
@@ -143,10 +144,10 @@ Plan: [docs/plans/slice-03-rates-line-pricer.md](docs/plans/slice-03-rates-line-
 
 | Suite | Result |
 |---|---|
-| `dotnet test server/Workbench.slnx` | 120 passed; the Rates tests (56) three times |
+| `dotnet test server/Workbench.slnx` | 130 passed (the 8 command tests of ADR-0005 included) |
 | `dotnet run` (Development) | Started; `/api/rates/market` advanced with the ticker |
-| `npm test` (Vitest) | 27 passed |
-| `npx playwright test` (Chromium, headless, Linux) | 9 passed; the two Rates tests also with `--repeat-each=3` (6 passed) |
+| `npm test` (Vitest) | 28 passed |
+| `npx playwright test` (Chromium, headless, Linux) | 9 passed; the Rates spec again after the commands (2 passed) |
 
 | Acceptance | Status |
 |---|---|
@@ -154,6 +155,7 @@ Plan: [docs/plans/slice-03-rates-line-pricer.md](docs/plans/slice-03-rates-line-
 | Manual and live agree on the same input and market (docs/07 acceptance 4) | Passed (xUnit) |
 | An edit moves the live subscription to its revision; capture refuses a frame no longer shown (spine 6) | Passed (xUnit) |
 | Cashflow edits carry, conflict or are lost when terms move (ADR-0004) | Passed (xUnit). Not yet driven in the browser. |
+| The AI's commands create a priceable line, refuse missing terms by name, join the page's subscription and are logged as the AI's (ADR-0005) | Passed (xUnit, over HTTP). No agent runtime drives them yet. |
 | Touch, tablet and phone layouts | Not verified; waits for ExGrid's touch release (C36) |
 
 ### Providers
@@ -169,6 +171,8 @@ The provider and the market are simulated. Real holiday calendars, the confirmed
 - The leg header itself does not expand its second level: that needs an ExGrid change (spec of 2026-10-27), so the toggle sits outside the grid, and expanding clears the grid's selection (ExGrid ADR-0011).
 - A Price result opens as a Run; it does not fill the line grid's figures, which only live frames do.
 - Per-line risk (the deltas) is in the Run's Risk grid only; the line grid shows PV and the solved quote.
+- A command's idempotency keys live for the process: a retry after a restart acts again.
+- A line the AI creates holds its terms as the line's own values, so the page does not mark them as the user's edits; the log says they came from the AI.
 
 ## Next
 

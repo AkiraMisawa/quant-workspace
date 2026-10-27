@@ -235,7 +235,8 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
         )}
         {subscription === undefined && ws.live !== undefined && !ws.live.running && (
           <Badge variant="light" color="gray" data-testid="live-stopped">
-            {ws.live.stoppedBy === 'idle' ? `live stopped: nobody watched it for ${idleText(ws.live.idleLimit)}` : 'live stopped'}
+            {ws.live.stoppedBy === 'idle' ? `live stopped: nobody watched it for ${idleText(ws.live.idleLimit)}`
+              : ws.live.stoppedFrom === 'ai' ? 'live stopped by the AI' : 'live stopped'}
             {ws.live.stoppedAt === undefined ? '' : ` at ${new Date(ws.live.stoppedAt).toLocaleTimeString()}`}
           </Badge>
         )}

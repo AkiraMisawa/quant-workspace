@@ -21,7 +21,7 @@ public class ApiTests(WorkbenchFactory factory) : IClassFixture<WorkbenchFactory
     public async Task Catalog_lists_what_modules_registered()
     {
         var catalog = (await client.GetFromJsonAsync<JsonObject>("/api/catalog"))!;
-        Assert.Equal(7, catalog["capabilities"]!.AsArray().Count);
+        Assert.Equal(10, catalog["capabilities"]!.AsArray().Count);
         Assert.Contains(catalog["actions"]!.AsArray(), a => a!["target"]!["kind"]!.GetValue<string>() == "openView");
     }
 

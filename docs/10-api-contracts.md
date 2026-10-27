@@ -20,6 +20,7 @@ All routes and type names here are proposed. Adapt them to an existing host with
 | `POST /api/quant/rates/subscriptions/{id}/capture` | Persist the exact selected complete frame and its input/market refs. |
 | `POST /api/quant/definitions` | Save a validated workflow/view version; execution is separate. |
 | `POST /api/quant/agent/...` | Adapter-owned AG-UI endpoint using a pinned verified protocol implementation. |
+| `POST /api/agent/commands/{capability}/{version}` | A command capability (ADR-0005) as the agent's tool call reaches it: inputs checked against its contracts, an idempotency key, the caller set by the server with origin `ai`; no Run. |
 
 Endpoints map transport inputs to application services. Tests call those services and pure domain functions without starting Blazor or MQ. Read-only capability discovery may be tailored to the caller's permissions.
 

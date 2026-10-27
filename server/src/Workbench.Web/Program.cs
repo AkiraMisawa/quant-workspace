@@ -34,6 +34,9 @@ builder.Services.AddSingleton(sp => new RatesLiveService(sp.GetRequiredService<I
 builder.Services.AddSingleton(sp => new MarketFeed(syntheticMarket, sp.GetRequiredService<RatesLiveService>()));
 builder.Services.AddSingleton<IWorkbenchModule>(sp => new RatesModule(sp.GetRequiredService<IRatesPricingProvider>(), syntheticMarket.Resolve));
 builder.Services.AddSingleton<RatesWorkspaces>();
+// The commands reach the workspace service only when invoked: it is built from the registry they are part of.
+builder.Services.AddSingleton<IWorkbenchModule>(sp => new RatesCommandsModule(sp.GetRequiredService<RatesWorkspaces>));
+builder.Services.AddSingleton(sp => new CommandService(sp.GetRequiredService<CompositionRegistry>(), sp.GetRequiredService<IDataStore>()));
 if (rates.Ticker)
     builder.Services.AddHostedService(sp => new MarketTicker(sp.GetRequiredService<MarketFeed>(), rates.SyntheticMarket.Config().Step, sp.GetRequiredService<ILogger<MarketTicker>>()));
 builder.Services.AddSingleton<CompositionRegistry>();

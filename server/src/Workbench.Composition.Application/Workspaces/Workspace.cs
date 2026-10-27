@@ -68,7 +68,9 @@ public enum EditKind
 
 /// <summary>
 /// One entry of the append-only edit log. An undo is a new entry, never a removal. <c>DomainKind</c> names
-/// the module's edit kind (for example <c>xva.assignment</c>), so one log holds every domain's edits.
+/// the module's edit kind (for example <c>xva.assignment</c>), so one log holds every domain's edits. <c>Origin</c>
+/// says where the edit came from (the page, the AI acting for the user; ADR-0005); null where the caller did not
+/// state it, and on entries written before origins were recorded.
 /// </summary>
 public sealed record EditEntry(
     long Seq,
@@ -78,7 +80,8 @@ public sealed record EditEntry(
     string? DomainKind,
     EditTarget? Target,
     JsonNode? Value,
-    string? Note);
+    string? Note,
+    RunOrigin? Origin = null);
 
 /// <summary>What a module declares about its edits: which fields are compared together.</summary>
 public interface IEditRules

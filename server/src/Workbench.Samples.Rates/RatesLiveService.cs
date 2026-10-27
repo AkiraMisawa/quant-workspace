@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using Workbench.Composition.Application;
 
 namespace Workbench.Samples.Rates;
 
@@ -29,9 +30,10 @@ public enum LiveStopReason { User, Idle, Deleted }
 /// <summary>
 /// A workspace's live state, for a page that opens on it: the running subscription to attach to, or the last one
 /// stopped, why and when, with the frame it showed last. A stopped subscription is never resumed; Start makes a new one.
+/// <c>StartedFrom</c> and <c>StoppedFrom</c> say whether the page or the AI acting for the user did it (ADR-0005).
 /// </summary>
 public sealed record LiveStatus(string SubscriptionId, bool Running, int Viewers, LiveStopReason? StoppedBy, DateTimeOffset? StoppedAt,
-    TimeSpan IdleLimit, LiveDelivery? LastFrame);
+    TimeSpan IdleLimit, LiveDelivery? LastFrame, RunOrigin StartedFrom, RunOrigin? StoppedFrom = null);
 
 /// <summary>
 /// Runs live subscriptions (docs/07 §4, §6): each market update reaches every running subscription, whose rules
@@ -46,8 +48,9 @@ public sealed record LiveStatus(string SubscriptionId, bool Running, int Viewers
 public sealed class RatesLiveService(IRatesPricingProvider provider, Func<string, MarketSnapshot?> resolveMarket, TimeProvider clock,
     TimeSpan idleLimit, int maxWorkers = 4)
 {
-    sealed class Entry(LiveSubscription rules, string workspaceId, LiveInput input)
+    sealed class Entry(LiveSubscription rules, string workspaceId, LiveInput input, RunOrigin startedFrom)
     {
+        public RunOrigin StartedFrom { get; } = startedFrom;
         public LiveSubscription Rules { get; } = rules;
         public string WorkspaceId { get; } = workspaceId;
         public LiveInput Input { get; set; } = input;
@@ -76,7 +79,7 @@ public sealed class RatesLiveService(IRatesPricingProvider provider, Func<string
     /// Starts the workspace's live subscription, or answers the one already running, which then prices this input if
     /// it is newer. Unwatched until a page attaches.
     /// </summary>
-    public string Start(string owner, string workspaceId, LiveInput input)
+    public string Start(string owner, string workspaceId, LiveInput input, RunOrigin origin = RunOrigin.Pricer)
     {
         var id = $"live-{Guid.CreateVersion7():N}";
         LiveWork? work;
@@ -91,7 +94,7 @@ public sealed class RatesLiveService(IRatesPricingProvider provider, Func<string
             }
             else
             {
-                var entry = new Entry(new LiveSubscription(id, owner, input.Revision), workspaceId, input) { UnwatchedSince = clock.GetUtcNow() };
+                var entry = new Entry(new LiveSubscription(id, owner, input.Revision), workspaceId, input, origin) { UnwatchedSince = clock.GetUtcNow() };
                 subscriptions[id] = entry;
                 stopped.Remove(workspaceId);
                 work = latest is null ? null : entry.Rules.OnMarket(latest);
@@ -125,18 +128,19 @@ public sealed class RatesLiveService(IRatesPricingProvider provider, Func<string
     }
 
     /// <summary>Stops the subscription for every page watching it. A calculation still running finishes and is discarded.</summary>
-    public void Stop(string owner, string subscriptionId, LiveStopReason reason = LiveStopReason.User)
+    public void Stop(string owner, string subscriptionId, LiveStopReason reason = LiveStopReason.User, RunOrigin? origin = null)
     {
-        lock (gate) StopLocked(Owned(owner, subscriptionId), subscriptionId, reason);
+        lock (gate) StopLocked(Owned(owner, subscriptionId), subscriptionId, reason, origin);
     }
 
-    void StopLocked(Entry entry, string subscriptionId, LiveStopReason reason)
+    void StopLocked(Entry entry, string subscriptionId, LiveStopReason reason, RunOrigin? origin = null)
     {
         entry.Rules.Stop();
         foreach (var viewer in entry.Viewers) viewer.Writer.TryComplete();
         subscriptions.Remove(subscriptionId);
         if (reason == LiveStopReason.Deleted) stopped.Remove(entry.WorkspaceId);
-        else stopped[entry.WorkspaceId] = new LiveStatus(subscriptionId, false, 0, reason, clock.GetUtcNow(), idleLimit, entry.Shown?.Delivery);
+        else stopped[entry.WorkspaceId] = new LiveStatus(subscriptionId, false, 0, reason, clock.GetUtcNow(), idleLimit, entry.Shown?.Delivery,
+            entry.StartedFrom, origin);
     }
 
     /// <summary>
@@ -188,7 +192,7 @@ public sealed class RatesLiveService(IRatesPricingProvider provider, Func<string
         {
             var running = subscriptions.FirstOrDefault(s => s.Value.WorkspaceId == workspaceId && s.Value.Rules.Owner == owner);
             if (running.Value is { } entry)
-                return new LiveStatus(running.Key, true, entry.Viewers.Count, null, null, idleLimit, entry.Shown?.Delivery);
+                return new LiveStatus(running.Key, true, entry.Viewers.Count, null, null, idleLimit, entry.Shown?.Delivery, entry.StartedFrom);
             return stopped.GetValueOrDefault(workspaceId);
         }
     }

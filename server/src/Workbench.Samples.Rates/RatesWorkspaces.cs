@@ -78,6 +78,12 @@ public sealed record RatesWorkspaceView(
     IReadOnlyList<RatesRunLink> Runs,
     LiveStatus? Live);
 
+/// <summary>Why a line could not be created from the terms given: every reason, and nothing was written.</summary>
+public sealed class LineTermsRefused(IReadOnlyList<string> issues) : Exception(string.Join(" ", issues))
+{
+    public IReadOnlyList<string> Issues { get; } = issues;
+}
+
 /// <summary>The frame a capture names: what the user saw, so a newer frame is never saved under it (spine 6).</summary>
 public sealed record FrameIdentity(int SubscriptionRevision, long InputRevision, string MarketSnapshotId);
 
@@ -94,8 +100,8 @@ public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore stor
 
     public static ISourceVersion Resolve(JsonObject descriptor) => NoAcquiredSource;
 
-    public WorkspaceState Create(string user, DateOnly valuationDate) =>
-        workspaces.Create(user, RatesEditRules.App, Context(valuationDate), NoAcquiredSource);
+    public WorkspaceState Create(string user, DateOnly valuationDate, RunOrigin origin = RunOrigin.Pricer) =>
+        workspaces.Create(user, RatesEditRules.App, Context(valuationDate), NoAcquiredSource, origin);
 
     public IReadOnlyList<WorkspaceState> OwnedBy(string user) => [.. workspaces.OwnedBy(user).Where(w => w.App == RatesEditRules.App)];
 
@@ -129,13 +135,47 @@ public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore stor
     {
         Owned(workspaceId, user);
         var line = $"L{revision + 1}";
-        return (Reported(workspaceId, workspaces.Create(workspaceId, revision, user, RatesEditRules.LinesScope, line, LineFields.Template(product))), line);
+        return (Reported(workspaceId, workspaces.Create(workspaceId, revision, user, RatesEditRules.LinesScope, line, LineFields.Template(product), RunOrigin.Pricer)), line);
+    }
+
+    /// <summary>
+    /// Creates one line from its terms in one edit (ADR-0005), at the workspace's current revision. The terms are read
+    /// and resolved as the row would be; anything that would leave the line unpriceable refuses the whole command, with
+    /// every reason, before anything is written. Nothing the caller did not give is filled in: the product decides only
+    /// which legs float, as a line added on the page does, and an empty quote is the leg solved at par (C40).
+    /// </summary>
+    public (WorkspaceState State, string Line) CreateLine(string workspaceId, string user, JsonObject terms, RunOrigin origin)
+    {
+        var state = Owned(workspaceId, user);
+        var line = $"L{state.Revision + 1}";
+        var fields = LineFrom(terms, RatesEditRules.ValuationDate(state));
+        return (Reported(workspaceId, workspaces.Create(workspaceId, state.Revision, user, RatesEditRules.LinesScope, line, fields, origin)), line);
+    }
+
+    /// <summary>A line's fields from its terms, refused with every reason it could not be priced at the valuation date.</summary>
+    public JsonObject LineFrom(JsonObject terms, DateOnly valuationDate)
+    {
+        var product = terms[LineFields.Product] is JsonValue p && p.TryGetValue<string>(out var text) && Enum.TryParse<RatesProduct>(text, true, out var parsed)
+            ? parsed : throw new LineTermsRefused(["The product is irs or ccs."]);
+        var fields = LineFields.Template(product);
+        var unknown = terms.Select(t => t.Key).Where(k => !LineFields.All.Contains(k) || k.EndsWith(".floating", StringComparison.Ordinal)).ToList();
+        if (unknown.Count > 0) throw new LineTermsRefused([.. unknown.Select(k => $"{k} is not a term a line is created with.")]);
+        foreach (var (name, value) in terms.Where(t => t.Key != LineFields.Product))
+        {
+            if (value is not null and not JsonValue) throw new LineTermsRefused([$"{name} takes a single value."]);
+            fields[name] = value?.DeepClone();
+        }
+        var (read, issues) = LineReader.Read("new", fields.ToDictionary(f => f.Key, f => f.Value));
+        if (read is null) throw new LineTermsRefused(issues);
+        var resolution = LineResolver.Resolve(read, valuationDate, conventions);
+        if (!resolution.Priceable) throw new LineTermsRefused(resolution.Issues);
+        return fields;
     }
 
     public WorkspaceState RemoveLine(string workspaceId, long revision, string user, string line)
     {
         Owned(workspaceId, user);
-        return Reported(workspaceId, workspaces.Remove(workspaceId, revision, user, line));
+        return Reported(workspaceId, workspaces.Remove(workspaceId, revision, user, line, RunOrigin.Pricer));
     }
 
     public WorkspaceState EditLine(string workspaceId, long revision, string user, string line, string field, JsonNode? value)
@@ -148,7 +188,7 @@ public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore stor
         // Types only: whether the terms make a line is the resolver's, and shows on the row.
         if (value is not null and not JsonValue)
             throw new WorkspaceRefused("InvalidValue", $"{field} takes a single value.", [target]);
-        return Reported(workspaceId, workspaces.Set(workspaceId, revision, user, target, value));
+        return Reported(workspaceId, workspaces.Set(workspaceId, revision, user, target, value, RunOrigin.Pricer));
     }
 
     public WorkspaceState EditCashflow(string workspaceId, long revision, string user, string line, string period, string field, JsonNode? value)
@@ -168,7 +208,7 @@ public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore stor
             _ => $"{field} is not an editable cashflow field.",
         };
         if (problem is not null) throw new WorkspaceRefused("InvalidValue", problem, [target]);
-        return Reported(workspaceId, workspaces.Set(workspaceId, revision, user, target, value));
+        return Reported(workspaceId, workspaces.Set(workspaceId, revision, user, target, value, RunOrigin.Pricer));
     }
 
     public WorkspaceState Resolve(string workspaceId, long revision, string user, string scope, string entity, string field, string resolution)
@@ -221,13 +261,24 @@ public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore stor
     }
 
     /// <summary>Starts ticking the workspace's current revision. Later edits move it to their revision.</summary>
-    public string StartLive(string workspaceId, string user)
+    public string StartLive(string workspaceId, string user, RunOrigin origin = RunOrigin.Pricer)
     {
         var state = Owned(workspaceId, user);
-        return live.Start(user, workspaceId, RatesAcceptedInput.Of(state, conventions));
+        return live.Start(user, workspaceId, RatesAcceptedInput.Of(state, conventions), origin);
     }
 
-    public void StopLive(string subscriptionId, string user) => live.Stop(user, subscriptionId);
+    public void StopLive(string subscriptionId, string user, RunOrigin origin = RunOrigin.Pricer) =>
+        live.Stop(user, subscriptionId, LiveStopReason.User, origin);
+
+    /// <summary>Stops the workspace's running subscription, for a caller who names the workspace rather than the subscription.</summary>
+    public string StopLiveOn(string workspaceId, string user, RunOrigin origin)
+    {
+        Owned(workspaceId, user);
+        var status = live.StatusOf(user, workspaceId);
+        if (status is not { Running: true }) throw new WorkspaceRefused("NotRunning", $"Workspace {workspaceId} is not ticking.");
+        live.Stop(user, status.SubscriptionId, LiveStopReason.User, origin);
+        return status.SubscriptionId;
+    }
 
     /// <summary>
     /// Captures the frame the user saw as a Run (docs/07 §3): refused when the shown frame is no longer that one,

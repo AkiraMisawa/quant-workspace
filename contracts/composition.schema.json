@@ -354,7 +354,9 @@
             "enum": [
               "readData",
               "compute",
-              "persistAnalysis"
+              "persistAnalysis",
+              "editWorkspace",
+              "subscribe"
             ]
           },
           "minItems": 0

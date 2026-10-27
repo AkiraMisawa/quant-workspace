@@ -79,13 +79,13 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
     readonly Dictionary<string, WorkspaceState> workspaces = [];
     readonly Lock gate = new();
 
-    public WorkspaceState Create(string owner, string app, JsonObject context, ISourceVersion source)
+    public WorkspaceState Create(string owner, string app, JsonObject context, ISourceVersion source, RunOrigin? origin = null)
     {
         RulesOf(app);
         var id = $"ws-{Guid.CreateVersion7():N}";
         var log = ImmutableList<EditEntry>.Empty
-            .Add(new EditEntry(1, clock.GetUtcNow(), owner, EditKind.Context, null, null, context.DeepClone(), null))
-            .Add(new EditEntry(2, clock.GetUtcNow(), owner, EditKind.Acquire, null, null, Acquired(source), null));
+            .Add(new EditEntry(1, clock.GetUtcNow(), owner, EditKind.Context, null, null, context.DeepClone(), null, origin))
+            .Add(new EditEntry(2, clock.GetUtcNow(), owner, EditKind.Acquire, null, null, Acquired(source), null, origin));
         var state = new WorkspaceState(id, owner, app, (JsonObject)context.DeepClone(), source,
             ImmutableDictionary<EditTarget, Override>.Empty, ImmutableDictionary<EditTarget, Conflict>.Empty,
             ImmutableDictionary<EditTarget, LostTarget>.Empty, log);
@@ -120,7 +120,7 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
     }
 
     /// <summary>Overrides a field. The field must exist in the current version and not be held as a conflict.</summary>
-    public WorkspaceState Set(string workspaceId, long expectedRevision, string user, EditTarget target, JsonNode? value) =>
+    public WorkspaceState Set(string workspaceId, long expectedRevision, string user, EditTarget target, JsonNode? value, RunOrigin? origin = null) =>
         Apply(workspaceId, expectedRevision, state =>
         {
             if (state.Conflicts.ContainsKey(target))
@@ -134,7 +134,7 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
             {
                 Overrides = state.Overrides.SetItem(target, item),
                 Lost = state.Lost.Remove(target),
-                Log = state.Log.Add(Entry(state, seq, user, EditKind.Set, target, value)),
+                Log = state.Log.Add(Entry(state, seq, user, EditKind.Set, target, value, origin: origin)),
             };
         });
 
@@ -199,7 +199,8 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
     /// Creates an entity the workspace holds (ADR-0004), with the module's initial field values as its source
     /// values. The module names the entity; one that exists already is refused.
     /// </summary>
-    public WorkspaceState Create(string workspaceId, long expectedRevision, string user, string scope, string entity, JsonObject fields) =>
+    public WorkspaceState Create(string workspaceId, long expectedRevision, string user, string scope, string entity, JsonObject fields,
+        RunOrigin? origin = null) =>
         Apply(workspaceId, expectedRevision, state =>
         {
             if (state.Created.ContainsKey(entity))
@@ -209,7 +210,7 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
             return state with
             {
                 Created = state.Created.Add(entity, new CreatedEntity(scope, entity, (JsonObject)fields.DeepClone(), seq)),
-                Log = state.Log.Add(Entry(state, seq, user, EditKind.Create, target, fields)),
+                Log = state.Log.Add(Entry(state, seq, user, EditKind.Create, target, fields, origin: origin)),
             };
         });
 
@@ -218,7 +219,7 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
     /// user removed them, so they are not lost targets to acknowledge. What was derived from it is checked when the
     /// derivation runs.
     /// </summary>
-    public WorkspaceState Remove(string workspaceId, long expectedRevision, string user, string entity) =>
+    public WorkspaceState Remove(string workspaceId, long expectedRevision, string user, string entity, RunOrigin? origin = null) =>
         Apply(workspaceId, expectedRevision, state =>
         {
             if (!state.Created.TryGetValue(entity, out var created))
@@ -232,7 +233,7 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
                 Overrides = state.Overrides.RemoveRange(gone),
                 Conflicts = state.Conflicts.RemoveRange(gone),
                 Lost = state.Lost.RemoveRange(gone),
-                Log = state.Log.Add(Entry(state, seq, user, EditKind.Remove, new EditTarget(created.Scope, entity, "*"), null, $"{gone.Count} edits")),
+                Log = state.Log.Add(Entry(state, seq, user, EditKind.Remove, new EditTarget(created.Scope, entity, "*"), null, $"{gone.Count} edits", origin)),
             };
         });
 
@@ -430,6 +431,7 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
     static Conflict ConflictOn(WorkspaceState state, EditTarget target) =>
         state.Conflicts.GetValueOrDefault(target) ?? throw new WorkspaceRefused("NoConflict", "This field has no conflict.", [target]);
 
-    EditEntry Entry(WorkspaceState state, long seq, string user, EditKind kind, EditTarget? target, JsonNode? value, string? note = null) =>
-        new(seq, clock.GetUtcNow(), user, kind, target is null ? null : RulesOf(state.App).KindOf(target), target, value?.DeepClone(), note);
+    EditEntry Entry(WorkspaceState state, long seq, string user, EditKind kind, EditTarget? target, JsonNode? value, string? note = null,
+        RunOrigin? origin = null) =>
+        new(seq, clock.GetUtcNow(), user, kind, target is null ? null : RulesOf(state.App).KindOf(target), target, value?.DeepClone(), note, origin);
 }

@@ -56,7 +56,7 @@ Show concise actions, selected assumptions and execution progress. Do not expose
 
 ## Execution policy
 
-Initial scope is read-only analytics. Server-side policy governs capability availability, data access, provider selection and resource limits. Agent-supplied identity/permissions are ignored. Booking, position mutation and external quoting are separate future capabilities with their own rules. Do not insert generic approval dialogs for already resolved ordinary analytics; prompt for material ambiguity or a policy-required action only.
+Initial scope is read-only analytics, and editing the caller's own workspaces and live subscriptions through command capabilities ([ADR-0005](adr/0005-commands-capabilities-that-edit-a-workspace-or-run-a-subscription.md)): invoked for the server's caller outside Runs, never as workflow steps, refusing missing terms by name instead of filling defaults. Server-side policy governs capability availability, data access, provider selection and resource limits. Agent-supplied identity/permissions are ignored. Booking, position mutation and external quoting are separate future capabilities with their own rules. Do not insert generic approval dialogs for already resolved ordinary analytics; prompt for material ambiguity or a policy-required action only.
 
 ## Acceptance
 
