@@ -127,6 +127,16 @@ Expose a `TypedDataRef` containing a result ID, schema identifier/version, immut
 
 History first groups by the business Run and then by Cases. It may also filter/group by user, workspace, capability, date, counterparty registration, status, or an optional named analysis group. Browser-tab sessions are diagnostic filters only.
 
+**CONFIRMED (owner, 2026-10-27):** one pricing history lists Runs whatever started them: the fixed pricer page, the AI interface, a composed workflow or a row action. Related Runs are shown as related, and a view can group them.
+
+**DEFAULT PROPOSAL:** every Run records its origin (`pricer`, `ai`, `workflow`, `action`) and its relations as explicit links, never inferred from names or timing:
+- `workspaceId`;
+- `parentRunId`, for a follow-up or a rerun of a frozen input;
+- `analysisGroupId`, when the user or the AI names a study;
+- `conversationId`, for AI-started Runs.
+
+The history is a retained dataset, and its groupings (by workspace, by analysis group, by parent chain, by counterparty registration) are registered views over it, so a new grouping is a view definition rather than a new page.
+
 Every saved result should expose provider identity, adapter version, engine/model/configuration version when available, market/reference snapshot IDs, units, and actual-versus-simulated provenance. Missing legacy metadata is marked unknown, not fabricated.
 
 **CONFIRMED:** authorized developers can retrieve a diagnostic bundle using Run ID. Include a machine-readable manifest, accepted input/provenance where available, baseline/draft references, invocation graph, case bindings, native request/response artifacts, versions, status, and relevant logs. Include hashes and a list of missing files. The retrieval API resolves through metadata and storage abstraction; callers do not need a server-local folder path. Apply authorization to the Run and each referenced artifact/result.
