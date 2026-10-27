@@ -39,6 +39,11 @@ export interface WorkspaceState {
   openAppDialog(dialog: string | undefined): void;
   /** Activates the app panel with these parameters if one is open, else opens it. */
   showApp(app: string, title: string, params: Readonly<Record<string, string>>): string;
+  /**
+   * Opens the app panel with these parameters behind the active one, or finds it open, without activating it; it is
+   * active only when no panel was (ADR-0007 §7: what the AI opens never takes the user's place).
+   */
+  openPanelBehind(app: string, title: string, params: Readonly<Record<string, string>>): string;
 }
 
 export type WorkspaceStore = ReturnType<typeof createWorkspaceStore>;
@@ -108,6 +113,14 @@ export function createWorkspaceStore(initialContext: Readonly<Record<string, unk
         return open.id;
       }
       return get().openPanel({ kind: 'app', title, app, params });
+    },
+
+    openPanelBehind(app, title, params) {
+      const open = get().panels.find((p) => p.kind === 'app' && p.app === app && JSON.stringify(p.params) === JSON.stringify(params));
+      if (open !== undefined) return open.id;
+      const id = `panel-${++next}`;
+      set((state) => ({ panels: [...state.panels, { kind: 'app', title, app, params, id }], activePanelId: state.activePanelId ?? id }));
+      return id;
     },
   }));
 }

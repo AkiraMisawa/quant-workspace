@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Workbench.Agent;
 using Workbench.Composition.Application;
 using Workbench.Composition.Application.Workspaces;
 using Workbench.Composition.Contracts;
@@ -57,6 +58,21 @@ builder.Services.AddSingleton(sp => new WorkspaceService(
     new Dictionary<string, IEditRules> { [XvaEditRules.App] = new XvaEditRules(), [RatesEditRules.App] = new RatesEditRules(conventions) },
     sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<IWorkspaceStore>()));
 builder.Services.AddSingleton<XvaWorkspaces>();
+// The AI pane (ADR-0007): the agent runtime is chosen here and nowhere else, by configuration, and an unknown one stops
+// startup rather than falling back to another. Until the Copilot adapter exists, the only runtime is the scripted one.
+builder.Services.AddSingleton<AgentThreads>();
+builder.Services.AddSingleton<AgentToolGateway>();
+builder.Services.AddSingleton<AgentService>();
+foreach (var request in RatesScriptedRequests.All(conventions)) builder.Services.AddSingleton(request);
+var agentRuntime = builder.Configuration["Agent:Runtime"];
+switch (agentRuntime)
+{
+    case "scripted":
+        builder.Services.AddSingleton<IAgentRuntime, ScriptedAgent>();
+        break;
+    default:
+        throw new InvalidOperationException($"Agent:Runtime is {(agentRuntime is null ? "not set" : $"'{agentRuntime}'")}; the runtimes are: scripted.");
+}
 builder.Services.AddSingleton(new CurrentUser(builder.Configuration["Workbench:DemoUser"] ?? "demo"));
 
 var app = builder.Build();
@@ -66,6 +82,7 @@ app.Services.GetRequiredService<CompositionRegistry>();
 app.MapWorkbenchApi();
 app.MapXvaApi();
 app.MapRatesApi();
+app.MapAgentApi();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapFallbackToFile("index.html");
