@@ -30,7 +30,7 @@ public class XvaTests
     {
         var ws = Open(Service());
 
-        var draft = Row(ws, "DRAFT-LE-01-1");
+        var draft = Row(ws, "DRAFT-1");
 
         Assert.Equal(("CSA-A", Ownership.Automatic, "jpy_ois", Ownership.Automatic), (draft.Csa, draft.CsaOwner, draft.Curve, draft.CurveOwner));
         Assert.False(draft.Before);
@@ -50,15 +50,15 @@ public class XvaTests
     {
         var service = Service();
         var ws = Open(service);
-        ws = Set(service, ws, "trade:DRAFT-LE-01-1", "csa", "CSA-B");
-        ws = Set(service, ws, "trade:DRAFT-LE-01-2", "csa", "CSA-B");
-        ws = Set(service, ws, "trade:DRAFT-LE-01-2", "curve", "jpy_ois");
+        ws = Set(service, ws, "trade:DRAFT-1", "csa", "CSA-B");
+        ws = Set(service, ws, "trade:DRAFT-2", "csa", "CSA-B");
+        ws = Set(service, ws, "trade:DRAFT-2", "curve", "jpy_ois");
 
         ws = Set(service, ws, "csa:CSA-B", "curve", "eur_estr");
 
-        Assert.Equal(("eur_estr", Ownership.Automatic), (Row(ws, "DRAFT-LE-01-1").Curve, Row(ws, "DRAFT-LE-01-1").CurveOwner));
-        Assert.Equal(("jpy_ois", Ownership.User), (Row(ws, "DRAFT-LE-01-2").Curve, Row(ws, "DRAFT-LE-01-2").CurveOwner));
-        Assert.Equal("CSA-A", Row(ws, "DRAFT-LE-01-3").Csa);
+        Assert.Equal(("eur_estr", Ownership.Automatic), (Row(ws, "DRAFT-1").Curve, Row(ws, "DRAFT-1").CurveOwner));
+        Assert.Equal(("jpy_ois", Ownership.User), (Row(ws, "DRAFT-2").Curve, Row(ws, "DRAFT-2").CurveOwner));
+        Assert.Equal("CSA-A", Row(ws, "DRAFT-3").Csa);
     }
 
     [Fact] // Spine: a CSA from another agreement is an issue on the row, and Price refuses rather than guess
@@ -66,9 +66,9 @@ public class XvaTests
     {
         var service = Service();
         var ws = Open(service);
-        ws = Set(service, ws, "trade:DRAFT-LE-01-1", "csa", "CSA-C");
+        ws = Set(service, ws, "trade:DRAFT-1", "csa", "CSA-C");
 
-        Assert.NotEmpty(Row(ws, "DRAFT-LE-01-1").Issues);
+        Assert.NotEmpty(Row(ws, "DRAFT-1").Issues);
         var refused = Assert.Throws<WorkspaceRefused>(() => XvaPrice.Submission(service, new InMemoryDataStore(), ws.WorkspaceId, ws.Revision, "k1"));
         Assert.Equal("InvalidInput", refused.Code);
     }
@@ -79,10 +79,10 @@ public class XvaTests
         var source = new XvaSourceVersion("ABC/LE-01", Day1, 5);
         var existing = source.Existing[0].TradeId;
 
-        Assert.Equal("new:DRAFT-LE-01-1", XvaEditRules.Target(source, "trade:DRAFT-LE-01-1", "notional").Scope);
-        Assert.Equal("cp:ABC/LE-01", XvaEditRules.Target(source, "trade:DRAFT-LE-01-1", "csa").Scope);
+        Assert.Equal("new:DRAFT-1", XvaEditRules.Target(source, "trade:DRAFT-1", "notional").Scope);
+        Assert.Equal("cp:ABC/LE-01", XvaEditRules.Target(source, "trade:DRAFT-1", "csa").Scope);
         Assert.Equal("cp:ABC/LE-01", XvaEditRules.Target(source, $"trade:{existing}", "notional").Scope);
-        Assert.Equal("xva.assignment", new XvaEditRules().KindOf(XvaEditRules.Target(source, "trade:DRAFT-LE-01-1", "curve")));
+        Assert.Equal("xva.assignment", new XvaEditRules().KindOf(XvaEditRules.Target(source, "trade:DRAFT-1", "curve")));
     }
 
     [Fact] // Akira: another value date is another version; a trade that matured in between takes its edits with it, listed
@@ -136,7 +136,7 @@ public class XvaTests
         var service = Service();
         var ws = Open(service);
         var (plain, _, _) = await Price(service, ws, "k1");
-        ws = Set(service, ws, "trade:DRAFT-LE-01-1", "notional", 9_000_000_000m);
+        ws = Set(service, ws, "trade:DRAFT-1", "notional", 9_000_000_000m);
 
         var (edited, _, _) = await Price(service, ws, "k2");
 
@@ -166,7 +166,7 @@ public class XvaTests
         var service = Service();
         var ws = Open(service);
         var seen = ws.Revision;
-        Set(service, ws, "trade:DRAFT-LE-01-1", "notional", 1m);
+        Set(service, ws, "trade:DRAFT-1", "notional", 1m);
 
         Assert.Equal("RevisionMoved", Assert.Throws<WorkspaceRefused>(() => XvaPrice.Submission(service, new InMemoryDataStore(), ws.WorkspaceId, seen, "k1")).Code);
     }

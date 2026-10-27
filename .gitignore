@@ -6,3 +6,4 @@ test-results/
 playwright-report/
 *.tsbuildinfo
 server/src/Workbench.Web/wwwroot/
+server/src/Workbench.Web/App_Data/

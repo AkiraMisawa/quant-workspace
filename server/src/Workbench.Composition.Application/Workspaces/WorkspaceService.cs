@@ -185,33 +185,8 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
         CarrySummary summary = new(0, 0, 0);
         var state = Apply(workspaceId, expectedRevision, state =>
         {
-            var rules = RulesOf(state.App);
-            var all = state.Overrides.Values
-                .Concat(state.Conflicts.Values.Select(c => c.Override))
-                .Concat(state.Lost.Values.Select(l => l.Override));
-            var overrides = ImmutableDictionary.CreateBuilder<EditTarget, Override>();
-            var conflicts = ImmutableDictionary.CreateBuilder<EditTarget, Conflict>();
-            var lost = ImmutableDictionary.CreateBuilder<EditTarget, LostTarget>();
-            foreach (var item in all)
-                switch (Carry.Check(item, source, rules))
-                {
-                    case CarryOutcome.Carried c: overrides[item.Target] = c.Override; break;
-                    case CarryOutcome.Conflicted c: conflicts[item.Target] = c.Conflict; break;
-                    case CarryOutcome.Lost l: lost[item.Target] = l.Target; break;
-                }
-            summary = new(overrides.Count, conflicts.Count, lost.Count);
-            var seq = state.Revision + 1;
-            return state with
-            {
-                Context = (JsonObject)context.DeepClone(),
-                Source = source,
-                Overrides = overrides.ToImmutable(),
-                Conflicts = conflicts.ToImmutable(),
-                Lost = lost.ToImmutable(),
-                Log = state.Log
-                    .Add(Entry(state, seq, user, EditKind.Context, null, context))
-                    .Add(Entry(state, seq + 1, user, EditKind.Acquire, null, Acquired(source))),
-            };
+            (var next, summary) = ReacquireOn(state, user, context, source);
+            return next;
         });
         return (state, summary);
     }
@@ -221,20 +196,70 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
     /// confirmed; a scope that holds another count by now is refused, so nothing is dropped unseen.
     /// </summary>
     public WorkspaceState DropScope(string workspaceId, long expectedRevision, string user, string scope, int confirmedCount) =>
-        Apply(workspaceId, expectedRevision, state =>
+        Apply(workspaceId, expectedRevision, state => DropOn(state, user, scope, confirmedCount));
+
+    /// <summary>
+    /// Moves to another scope in one step (ADR-0003 §6): drops the confirmed edits of the scope being left,
+    /// then re-acquires for the new context, checking what remains (a new trade's own edits) as any refresh
+    /// does. Either both happen or neither.
+    /// </summary>
+    public (WorkspaceState State, CarrySummary Summary) ChangeScope(string workspaceId, long expectedRevision, string user,
+        string leaving, int confirmedCount, JsonObject context, ISourceVersion source)
+    {
+        CarrySummary summary = new(0, 0, 0);
+        var state = Apply(workspaceId, expectedRevision, state =>
         {
-            var dropped = state.InScope(scope);
-            if (dropped.Count != confirmedCount)
-                throw new WorkspaceRefused("ConfirmationStale", $"The scope holds {dropped.Count} edits; {confirmedCount} were confirmed.");
-            var seq = state.Revision + 1;
-            return state with
-            {
-                Overrides = state.Overrides.RemoveRange(dropped.Keys),
-                Conflicts = state.Conflicts.RemoveRange(dropped.Keys),
-                Lost = state.Lost.RemoveRange(dropped.Keys),
-                Log = state.Log.Add(Entry(state, seq, user, EditKind.DropScope, null, JsonValue.Create(scope), $"{dropped.Count} edits")),
-            };
+            (var next, summary) = ReacquireOn(DropOn(state, user, leaving, confirmedCount), user, context, source);
+            return next;
         });
+        return (state, summary);
+    }
+
+    (WorkspaceState, CarrySummary) ReacquireOn(WorkspaceState state, string user, JsonObject context, ISourceVersion source)
+    {
+        var rules = RulesOf(state.App);
+        var all = state.Overrides.Values
+            .Concat(state.Conflicts.Values.Select(c => c.Override))
+            .Concat(state.Lost.Values.Select(l => l.Override));
+        var overrides = ImmutableDictionary.CreateBuilder<EditTarget, Override>();
+        var conflicts = ImmutableDictionary.CreateBuilder<EditTarget, Conflict>();
+        var lost = ImmutableDictionary.CreateBuilder<EditTarget, LostTarget>();
+        foreach (var item in all)
+            switch (Carry.Check(item, source, rules))
+            {
+                case CarryOutcome.Carried c: overrides[item.Target] = c.Override; break;
+                case CarryOutcome.Conflicted c: conflicts[item.Target] = c.Conflict; break;
+                case CarryOutcome.Lost l: lost[item.Target] = l.Target; break;
+            }
+        var seq = state.Revision + 1;
+        var next = state with
+        {
+            Context = (JsonObject)context.DeepClone(),
+            Source = source,
+            Overrides = overrides.ToImmutable(),
+            Conflicts = conflicts.ToImmutable(),
+            Lost = lost.ToImmutable(),
+            Log = state.Log
+                .Add(Entry(state, seq, user, EditKind.Context, null, context))
+                .Add(Entry(state, seq + 1, user, EditKind.Acquire, null, Acquired(source))),
+        };
+        return (next, new(overrides.Count, conflicts.Count, lost.Count));
+    }
+
+    WorkspaceState DropOn(WorkspaceState state, string user, string scope, int confirmedCount)
+    {
+        var dropped = state.InScope(scope);
+        if (dropped.Count != confirmedCount)
+            throw new WorkspaceRefused("ConfirmationStale", $"The scope holds {dropped.Count} edits; {confirmedCount} were confirmed.");
+        var seq = state.Revision + 1;
+        return state with
+        {
+            Overrides = state.Overrides.RemoveRange(dropped.Keys),
+            Conflicts = state.Conflicts.RemoveRange(dropped.Keys),
+            Lost = state.Lost.RemoveRange(dropped.Keys),
+            Log = state.Log.Add(Entry(state, seq, user, EditKind.DropScope, null, JsonValue.Create(scope), $"{dropped.Count} edits")),
+        };
+    }
 
     /// <summary>
     /// Freezes the revision for Price. Refused while an entity it would price has an unresolved conflict or an

@@ -46,7 +46,7 @@ public sealed class SqliteWorkspaceStoreTests : IDisposable
         var ws = service.Create("akira", XvaEditRules.App, Context(Day1), new XvaSourceVersion("ABC/LE-01", Day1, 40));
         var later = new XvaSourceVersion("ABC/LE-01", Day1.AddYears(1), 40);
         var matured = ((XvaSourceVersion)ws.Source).Existing.First(t => later.Trade(t.TradeId) is null);
-        ws = Set(service, ws, "trade:DRAFT-LE-01-1", "csa", "CSA-B");
+        ws = Set(service, ws, "trade:DRAFT-1", "csa", "CSA-B");
         ws = Set(service, ws, "csa:CSA-B", "curve", "eur_estr");
         ws = Set(service, ws, "credit:ABC/LE-01", "cvaRecovery", null);
         ws = Set(service, ws, $"trade:{matured.TradeId}", "notional", 5m);
@@ -56,7 +56,7 @@ public sealed class SqliteWorkspaceStoreTests : IDisposable
 
         Assert.NotNull(restored);
         Assert.Equal(Picture(ws), Picture(restored));
-        Assert.Equal("eur_estr", XvaMaterialiser.Trades(restored).Single(t => t.TradeId == "DRAFT-LE-01-1").Curve);
+        Assert.Equal("eur_estr", XvaMaterialiser.Trades(restored).Single(t => t.TradeId == "DRAFT-1").Curve);
     }
 
     [Fact] // Spine 6: two servers on one file cannot both commit against the same revision
@@ -66,9 +66,9 @@ public sealed class SqliteWorkspaceStoreTests : IDisposable
         var ws = first.Create("akira", XvaEditRules.App, Context(Day1), new XvaSourceVersion("ABC/LE-01", Day1, 5));
         var second = Service(Store());
         var seenBySecond = second.Find(ws.WorkspaceId)!;
-        Set(first, ws, "trade:DRAFT-LE-01-1", "notional", 1m);
+        Set(first, ws, "trade:DRAFT-1", "notional", 1m);
 
-        var refused = Assert.Throws<WorkspaceRefused>(() => Set(second, seenBySecond, "trade:DRAFT-LE-01-2", "notional", 2m));
+        var refused = Assert.Throws<WorkspaceRefused>(() => Set(second, seenBySecond, "trade:DRAFT-2", "notional", 2m));
 
         Assert.Equal("RevisionMoved", refused.Code);
         Assert.Equal(3, Service(Store()).Find(ws.WorkspaceId)!.Revision);
@@ -80,7 +80,7 @@ public sealed class SqliteWorkspaceStoreTests : IDisposable
         var store = Store();
         var service = Service(store);
         var ws = service.Create("akira", XvaEditRules.App, Context(Day1), new XvaSourceVersion("ABC/LE-01", Day1, 5));
-        ws = Set(service, ws, "trade:DRAFT-LE-01-1", "notional", 1m);
+        ws = Set(service, ws, "trade:DRAFT-1", "notional", 1m);
 
         service.Delete(ws.WorkspaceId, "akira");
 

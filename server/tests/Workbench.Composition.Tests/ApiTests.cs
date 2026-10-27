@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 namespace Workbench.Composition.Tests;
 
 // The HTTP surface maps to the services and refuses what the contract does not know.
-public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+public class ApiTests(WorkbenchFactory factory) : IClassFixture<WorkbenchFactory>
 {
     readonly HttpClient client = factory.CreateClient();
 
@@ -21,7 +21,7 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
     public async Task Catalog_lists_what_modules_registered()
     {
         var catalog = (await client.GetFromJsonAsync<JsonObject>("/api/catalog"))!;
-        Assert.Equal(4, catalog["capabilities"]!.AsArray().Count);
+        Assert.Equal(5, catalog["capabilities"]!.AsArray().Count);
         Assert.Contains(catalog["actions"]!.AsArray(), a => a!["target"]!["kind"]!.GetValue<string>() == "openView");
     }
 

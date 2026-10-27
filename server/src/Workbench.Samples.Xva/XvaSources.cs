@@ -92,7 +92,8 @@ public sealed class XvaSourceVersion : ISourceVersion
         ValueDate = valueDate;
         Existing = [.. Enumerable.Range(1, existingCount).Select(i => Generate(Registration, $"{Registration.Code}-{Registration.LegalEntity}-E{i:D5}", false, valueDate)).OfType<SourceTrade>()];
         this.existingCount = existingCount;
-        New = [.. Enumerable.Range(1, 3).Select(i => Generate(Registration, $"DRAFT-{Registration.LegalEntity}-{i}", true, valueDate)).OfType<SourceTrade>()];
+        // Drafts the user loaded belong to no counterparty, so they stay through a counterparty change (D07).
+        New = [.. Enumerable.Range(1, 3).Select(i => Generate(Registration, $"DRAFT-{i}", true, valueDate)).OfType<SourceTrade>()];
         trades = Existing.Concat(New).ToDictionary(t => t.TradeId);
         CdsRecovery = 0.4m;
         // One registration has an explicit empty CVA recovery: analytics then uses the CDS recovery (docs/03).
