@@ -38,12 +38,13 @@ public class RatesLiveServiceTests
     static LiveInput Input(long revision) => new(revision, ValuationDate,
         [new PricingLine("L1", revision, Direction.Pay, [], null, false)], []);
 
-    static RatesLiveService Service(IRatesPricingProvider provider) => new(provider, id => Snapshot(long.Parse(id[2..])), TimeProvider.System);
+    static RatesLiveService Service(IRatesPricingProvider provider) => new(provider, id => Snapshot(long.Parse(id[2..])), TimeProvider.System, TimeSpan.FromMinutes(5));
 
     static async Task<LiveDelivery> NextFrame(RatesLiveService service, string id)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        return await service.Frames("akira", id).ReadAsync(timeout.Token);
+        var (frames, _) = service.Attach("akira", id);
+        return await frames.ReadAsync(timeout.Token);
     }
 
     [Fact] // RT03: an edit during a calculation never lets the old input's result reach the screen
@@ -89,7 +90,7 @@ public class RatesLiveServiceTests
         var id = service.Start("akira", "ws-1", Input(1));
         await service.PublishAsync(Snapshot(1).Update);
         var call = await provider.NextCall();
-        var frames = service.Frames("akira", id);
+        var (frames, _) = service.Attach("akira", id);
 
         service.Stop("akira", id);
         call.Result.SetResult(HeldProvider.Rows(call.Input));
@@ -107,7 +108,57 @@ public class RatesLiveServiceTests
         var service = Service(new HeldProvider());
         var id = service.Start("akira", "ws-1", Input(1));
 
-        Assert.Throws<KeyNotFoundException>(() => service.Frames("someone", id));
+        Assert.Throws<KeyNotFoundException>(() => service.Attach("someone", id));
         Assert.Throws<KeyNotFoundException>(() => service.Stop("someone", id));
+    }
+
+    /// <summary>A clock the test moves by hand.</summary>
+    sealed class ManualClock(DateTimeOffset now) : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = now;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact] // Owner, 2026-10-27: a subscription nobody watches stops after the idle limit, and says so
+    public void An_unwatched_subscription_stops_after_the_idle_limit()
+    {
+        var clock = new ManualClock(DateTimeOffset.UnixEpoch);
+        var service = new RatesLiveService(new HeldProvider(), id => Snapshot(long.Parse(id[2..])), clock, TimeSpan.FromMinutes(5));
+        var id = service.Start("akira", "ws-1", Input(1));
+        var (_, detach) = service.Attach("akira", id);
+
+        clock.Now += TimeSpan.FromHours(1);
+        Assert.Equal(0, service.SweepIdle());
+        detach.Dispose();
+        clock.Now += TimeSpan.FromMinutes(4);
+        Assert.Equal(0, service.SweepIdle());
+        clock.Now += TimeSpan.FromMinutes(1);
+
+        Assert.Equal(1, service.SweepIdle());
+        Assert.Equal(0, service.Count);
+        var status = service.StatusOf("akira", "ws-1")!;
+        Assert.Equal((false, LiveStopReason.Idle, id), (status.Running, status.StoppedBy, status.SubscriptionId));
+    }
+
+    [Fact] // Owner, 2026-10-27: pages join the workspace's one subscription, and a new page sees the frame shown now
+    public async Task Pages_share_one_subscription_and_a_late_page_sees_the_shown_frame()
+    {
+        var service = Service(new FakeRatesPricing());
+        var id = service.Start("akira", "ws-1", Input(1));
+        var first = await AttachedFrame(service, id, Snapshot(1));
+
+        Assert.Equal(id, service.Start("akira", "ws-1", Input(1)));
+        var (late, _) = service.Attach("akira", id);
+        Assert.True(late.TryRead(out var shown));
+        Assert.Equal(first.Market.SnapshotId, shown!.Market.SnapshotId);
+        Assert.Equal(1, service.Count);
+    }
+
+    static async Task<LiveDelivery> AttachedFrame(RatesLiveService service, string id, MarketSnapshot snapshot)
+    {
+        var (frames, _) = service.Attach("akira", id);
+        await service.PublishAsync(snapshot.Update);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        return await frames.ReadAsync(timeout.Token);
     }
 }

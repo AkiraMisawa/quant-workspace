@@ -1,4 +1,6 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
+using System.Threading.Channels;
 using Workbench.Composition.Application;
 using Workbench.Composition.Application.Workspaces;
 using Workbench.Samples.Rates;
@@ -102,9 +104,13 @@ public static class RatesApi
 
         var live = api.MapGroup("/live");
 
-        // One stream per subscription: the newest frame only, when the reader falls behind (docs/07 §6).
+        // A page attaches while its stream is open: the frame shown now, then the newest only when it falls behind
+        // (docs/07 §6). Closing the stream detaches it; the last page to go starts the idle limit.
         live.MapGet("/{sid}/frames", (string sid, CurrentUser user, RatesLiveService service, CancellationToken cancellationToken) => Guard(() =>
-            TypedResults.ServerSentEvents(service.Frames(user.Id, sid).ReadAllAsync(cancellationToken), eventType: "frame")));
+        {
+            var (frames, detach) = service.Attach(user.Id, sid);
+            return TypedResults.ServerSentEvents(Watched(frames, detach, cancellationToken), eventType: "frame");
+        }));
 
         live.MapPost("/{sid}/capture", (string sid, CaptureRequest request, CurrentUser user, RatesWorkspaces service) => Guard(() =>
             Submitted(service.Capture(sid, user.Id, new FrameIdentity(request.SubscriptionRevision, request.InputRevision, request.MarketSnapshotId), request.IdempotencyKey))));
@@ -114,6 +120,14 @@ public static class RatesApi
             service.StopLive(sid, user.Id);
             return Results.NoContent();
         }));
+    }
+
+    static async IAsyncEnumerable<LiveDelivery> Watched(ChannelReader<LiveDelivery> frames, IDisposable detach,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        using (detach)
+            await foreach (var frame in frames.ReadAllAsync(cancellationToken))
+                yield return frame;
     }
 
     static IResult Submitted(SubmissionResult result) => result switch

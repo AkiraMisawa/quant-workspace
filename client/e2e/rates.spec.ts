@@ -60,8 +60,11 @@ test('C40, docs/07: a line typed by keyboard ticks live, is captured and priced 
   await expect(page.getByTestId('run-status')).toHaveText('succeeded');
   await expect(page.getByRole('tab', { name: /^Capture / })).toHaveAttribute('aria-selected', 'true');
 
+  // Leaving the page only detached it: back on it, the page attaches to the same live subscription by itself.
   await page.getByRole('tab', { name: 'Rates 2026-10-27' }).click();
   await settled(page, 'Lines');
+  await expect(page.getByTestId('live-toggle')).toHaveText('Stop live');
+  await expect(page.getByTestId('live-frame')).toContainText('live');
   await command(page, 'Price Rates workspace');
   await expect(page.getByTestId('run-status')).toHaveText('succeeded');
   // The Run's view is a grid titled Lines too; only the Run's tab panel is mounted now.

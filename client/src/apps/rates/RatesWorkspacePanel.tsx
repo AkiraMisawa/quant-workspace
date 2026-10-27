@@ -12,7 +12,7 @@ import type { FrameStream, RatesApi } from './api';
 import { registerRatesCommands } from './commands';
 import type { CashflowsView, HeldEdit, LiveFrame, PeriodView, RatesWorkspaceView, Resolution } from './contracts';
 import {
-  PINNED_COLUMNS, lineCellMessage, lineCellState, lineColumns, lineHeaderGroups, lineRows, parserOf, periodCellState, periodColumns, periodParserOf,
+  PINNED_COLUMNS, lineCellMessage, lineCellState, lineColumns, hiddenEdits, lineHeaderGroups, lineRows, parserOf, periodCellState, periodColumns, periodParserOf,
   type LineRow,
 } from './lines';
 
@@ -31,16 +31,17 @@ type Edit =
 
 const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-/** The four column sets, made once each: a new column is a new declaration, and every row paints again (ExGrid ADR-0003). */
-const layouts = new Map<string, { readonly columns: ReturnType<typeof lineColumns>; readonly groups: ReturnType<typeof lineHeaderGroups> }>();
-function layoutOf(leg1: boolean, leg2: boolean) {
+/** Each column set made once: a new column is a new declaration, and every row paints again (ExGrid ADR-0003). */
+const columnSets = new Map<string, ReturnType<typeof lineColumns>>();
+const groupSets = new Map<string, ReturnType<typeof lineHeaderGroups>>();
+function layoutOf(leg1: boolean, leg2: boolean, hides: { readonly leg1: boolean; readonly leg2: boolean }) {
   const key = `${leg1}/${leg2}`;
-  let layout = layouts.get(key);
-  if (layout === undefined) {
-    layout = { columns: lineColumns({ leg1, leg2 }), groups: lineHeaderGroups({ leg1, leg2 }) };
-    layouts.set(key, layout);
-  }
-  return layout;
+  let columns = columnSets.get(key);
+  if (columns === undefined) columnSets.set(key, columns = lineColumns({ leg1, leg2 }));
+  const groupKey = `${key}/${hides.leg1}/${hides.leg2}`;
+  let groups = groupSets.get(groupKey);
+  if (groups === undefined) groupSets.set(groupKey, groups = lineHeaderGroups({ leg1, leg2 }, hides));
+  return { columns, groups };
 }
 
 export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly panelId: string; readonly workspaceId: string; readonly api: RatesApi }) {
@@ -85,25 +86,41 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
     source.replaceAll(rows);
   }, [view.data, frame, source]);
 
-  // Live: one stream per subscription; stopped when the page goes, so nothing ticks for nobody (docs/07 §9.3).
+  // Live (owner, 2026-10-27): the workspace's one subscription runs on the server; this page attaches to it
+  // while it is open and only detaches when it goes. The server stops it once nobody has watched it for the
+  // idle limit; Stop stops it for everyone. A stopped subscription is never resumed: Start makes a new one,
+  // pricing the current revision from the next tick.
   const stream = useRef<FrameStream | undefined>(undefined);
-  const stopLive = useCallback(async (id: string | undefined) => {
+  const detach = useCallback(() => {
     stream.current?.close();
     stream.current = undefined;
     setSubscription(undefined);
-    if (id !== undefined) await api.stopLive(id);
-  }, [api]);
-  const startLive = useCallback(async () => {
-    const { subscriptionId } = await api.startLive(workspaceId);
+  }, []);
+  const attach = useCallback((subscriptionId: string) => {
+    if (stream.current !== undefined) return;
     setSubscription(subscriptionId);
     stream.current = api.frames(subscriptionId, setFrame, () => {
-      workspace.notify('The live stream broke; ticking stopped. Start it again to resume.');
-      void stopLive(subscriptionId);
+      detach();
+      void queryClient.invalidateQueries({ queryKey: ['rates', workspaceId] });
     });
-  }, [api, workspaceId, workspace, stopLive]);
-  const subscriptionRef = useRef(subscription);
-  subscriptionRef.current = subscription;
-  useEffect(() => () => { void stopLive(subscriptionRef.current); }, [stopLive]);
+  }, [api, detach, queryClient, workspaceId]);
+  const stopLive = useCallback(async (id: string | undefined) => {
+    detach();
+    if (id !== undefined) await api.stopLive(id);
+    void queryClient.invalidateQueries({ queryKey: ['rates', workspaceId] });
+  }, [api, detach, queryClient, workspaceId]);
+  const startLive = useCallback(async () => {
+    const { subscriptionId } = await api.startLive(workspaceId);
+    attach(subscriptionId);
+  }, [api, workspaceId, attach]);
+  // On opening: attach to a running subscription, or show the last frame of a stopped one, marked as stopped.
+  const liveStatus = view.data?.live;
+  useEffect(() => {
+    if (liveStatus === undefined) return;
+    if (liveStatus.running) attach(liveStatus.subscriptionId);
+    else if (liveStatus.lastFrame !== undefined) setFrame((shown) => shown ?? liveStatus.lastFrame);
+  }, [liveStatus, attach]);
+  useEffect(() => () => { stream.current?.close(); stream.current = undefined; }, []);
 
   const onEdit = useCallback((intent: GridEditIntent<LineRow>) => {
     const parse = parserOf(intent.column);
@@ -186,7 +203,7 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
   if (view.isPending) return <Text c="dimmed">Loading workspace…</Text>;
   if (view.isError) return <Alert color="red" title="Workspace">{view.error.message}</Alert>;
   const ws = view.data;
-  const layout = layoutOf(expanded.leg1, expanded.leg2);
+  const layout = layoutOf(expanded.leg1, expanded.leg2, hiddenEdits(ws.lines));
   const height = Math.min(64 + Math.max(ws.lines.length, 3) * 28, 420);
 
   return (
@@ -202,7 +219,7 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
         <Button size="xs" onClick={() => void price()} loading={busy === 'Pricing'} disabled={busy !== undefined && busy !== 'Pricing'}>Price</Button>
         <Button size="xs" color={subscription === undefined ? 'teal' : 'red'} variant="light" data-testid="live-toggle"
           onClick={() => void (subscription === undefined ? startLive() : stopLive(subscription))}>
-          {subscription === undefined ? 'Start live' : 'Stop live'}
+          {subscription !== undefined ? 'Stop live' : ws.live !== undefined && !ws.live.running ? 'Resume live' : 'Start live'}
         </Button>
         <Button size="xs" variant="default" disabled={subscription === undefined || frame === undefined} loading={busy === 'Capturing'}
           onClick={() => void capture()}>Capture</Button>
@@ -214,6 +231,12 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
         {frame !== undefined && (
           <Badge variant="light" color={frame.inputRevision < ws.revision ? 'yellow' : 'teal'} data-testid="live-frame">
             {subscription === undefined ? 'last frame' : 'live'} · r{frame.inputRevision} · #{frame.market.sequence} · {frame.calculationMode}
+          </Badge>
+        )}
+        {subscription === undefined && ws.live !== undefined && !ws.live.running && (
+          <Badge variant="light" color="gray" data-testid="live-stopped">
+            {ws.live.stoppedBy === 'idle' ? `live stopped: nobody watched it for ${idleText(ws.live.idleLimit)}` : 'live stopped'}
+            {ws.live.stoppedAt === undefined ? '' : ` at ${new Date(ws.live.stoppedAt).toLocaleTimeString()}`}
           </Badge>
         )}
         <Text size="xs" c="dimmed" data-testid="workspace-summary">{ws.lines.length} line(s) · revision {ws.revision}</Text>
@@ -231,6 +254,13 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
       {ws.runs.length > 0 && <Text size="xs" c="dimmed">Runs: {ws.runs.map((r) => `${r.runId.slice(-8)} (r${r.revision})`).join(', ')}</Text>}
     </Stack>
   );
+}
+
+/** A .NET TimeSpan (`hh:mm:ss`) as minutes or seconds. */
+function idleText(span: string): string {
+  const [h, m, s] = span.split(':').map(Number) as [number, number, number];
+  const seconds = h * 3600 + m * 60 + s;
+  return seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds} s`;
 }
 
 const targetsOf = (error: unknown) =>

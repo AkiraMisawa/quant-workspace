@@ -23,7 +23,8 @@ export interface RatesApi {
   price(workspaceId: string, revision: number, idempotencyKey: string, marketSnapshotId: string): Promise<RunRecord>;
   startLive(workspaceId: string): Promise<{ readonly subscriptionId: string }>;
   stopLive(subscriptionId: string): Promise<void>;
-  frames(subscriptionId: string, onFrame: (frame: LiveFrame) => void, onBroken: () => void): FrameStream;
+  /** Attaches to a running subscription's frames. `onEnded` hears that the server ended the stream for good. */
+  frames(subscriptionId: string, onFrame: (frame: LiveFrame) => void, onEnded: () => void): FrameStream;
   capture(subscriptionId: string, frame: LiveFrame, idempotencyKey: string): Promise<RunRecord>;
 }
 
@@ -45,12 +46,13 @@ export const httpRatesApi: RatesApi = {
     const response = await fetch(`/api/rates/live/${encodeURIComponent(subscriptionId)}`, { method: 'DELETE' });
     if (!response.ok && response.status !== 404) throw new Error(`The live subscription could not be stopped (${response.status}).`);
   },
-  frames: (subscriptionId, onFrame, onBroken) => {
+  frames: (subscriptionId, onFrame, onEnded) => {
     const source = new EventSource(`/api/rates/live/${encodeURIComponent(subscriptionId)}/frames`);
     source.addEventListener('frame', (event) => onFrame(JSON.parse((event as MessageEvent<string>).data) as LiveFrame));
-    // The browser would reconnect by itself, and a second reader of one subscription's frames is refused by
-    // nobody but would split them; a broken stream is told instead, and the page starts again.
-    source.onerror = () => { source.close(); onBroken(); };
+    // A dropped connection is retried by the browser, and the server answers it with the frame shown now. When
+    // the subscription has stopped (by Stop, or idle), the retry is refused and the browser gives up: the page
+    // then reads the workspace again to learn why.
+    source.onerror = () => { if (source.readyState === EventSource.CLOSED) onEnded(); };
     return { close: () => source.close() };
   },
   capture: (subscriptionId, frame, idempotencyKey) => post(`/api/rates/live/${encodeURIComponent(subscriptionId)}/capture`, {

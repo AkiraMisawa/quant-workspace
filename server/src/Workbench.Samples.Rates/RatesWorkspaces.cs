@@ -27,6 +27,8 @@ public sealed class MarketFeed(SyntheticMarket market, RatesLiveService live)
             snapshot = market.Snapshot(next++);
             Latest = snapshot;
         }
+        // Each tick also stops what nobody has watched for the idle limit.
+        live.SweepIdle();
         await live.PublishAsync(snapshot.Update);
         return snapshot;
     }
@@ -73,7 +75,8 @@ public sealed record RatesWorkspaceView(
     IReadOnlyList<RatesHeldEdit> Conflicts,
     IReadOnlyList<RatesHeldEdit> Lost,
     CarrySummary? Rederived,
-    IReadOnlyList<RatesRunLink> Runs);
+    IReadOnlyList<RatesRunLink> Runs,
+    LiveStatus? Live);
 
 /// <summary>The frame a capture names: what the user saw, so a newer frame is never saved under it (spine 6).</summary>
 public sealed record FrameIdentity(int SubscriptionRevision, long InputRevision, string MarketSnapshotId);
@@ -107,7 +110,7 @@ public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore stor
         return new(state.WorkspaceId, state.Revision, RatesEditRules.ValuationDate(state), lines,
             [.. state.Conflicts.Values.OrderBy(c => c.Override.Seq).Select(c => new RatesHeldEdit(c.Override.Target.Scope, c.Override.Target.Entity, c.Override.Target.Field, c.Override.Value, c.Source, false))],
             [.. state.Lost.Values.OrderBy(l => l.Override.Seq).Select(l => new RatesHeldEdit(l.Override.Target.Scope, l.Override.Target.Entity, l.Override.Target.Field, l.Override.Value, null, l.Acknowledged))],
-            state.Rederived, links);
+            state.Rederived, links, live.StatusOf(user, workspaceId));
     }
 
     public CashflowsView Cashflows(string workspaceId, string user, string line)
@@ -260,7 +263,7 @@ public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore stor
     public void Delete(string workspaceId, string user)
     {
         Owned(workspaceId, user);
-        foreach (var (owner, id) in live.OnWorkspace(workspaceId)) live.Stop(owner, id);
+        foreach (var (owner, id) in live.OnWorkspace(workspaceId)) live.Stop(owner, id, LiveStopReason.Deleted);
         workspaces.Delete(workspaceId, user);
     }
 

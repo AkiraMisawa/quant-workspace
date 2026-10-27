@@ -216,14 +216,25 @@ export function lineColumns(expanded: { readonly leg1: boolean; readonly leg2: b
 /** How many columns from the left stay in place: the line and its actions. */
 export const PINNED_COLUMNS = 2;
 
-/** The Header Groups over the columns (ExGrid ADR-0032): one tier naming the trade, each leg and the result. */
-export function lineHeaderGroups(expanded: { readonly leg1: boolean; readonly leg2: boolean }): readonly GridHeaderGroup[] {
+/**
+ * Whether a collapsed leg hides a value the user set, on any line (owner, 2026-10-27): collapsing only hides it,
+ * and it is still priced, so the group says so. Stands in for ExGrid's own mark until its Header Group collapses.
+ */
+export function hiddenEdits(lines: readonly LineView[]): { readonly leg1: boolean; readonly leg2: boolean } {
+  const hides = (n: 1 | 2) => lines.some((l) => legDetail.some((f) => l.userFields.includes(`leg${n}.${f}`)));
+  return { leg1: hides(1), leg2: hides(2) };
+}
+
+/** The Header Groups over the columns (ExGrid ADR-0032): one tier naming the result, the trade, each leg and its terms. */
+export function lineHeaderGroups(expanded: { readonly leg1: boolean; readonly leg2: boolean },
+  hidden: { readonly leg1: boolean; readonly leg2: boolean } = { leg1: false, leg2: false }): readonly GridHeaderGroup[] {
   const leg = (n: 1 | 2, open: boolean) => [...legBasic, ...(open ? legDetail : [])].map((f) => `leg${n}.${f}`);
+  const caption = (n: 1 | 2, open: boolean, hides: boolean) => `Leg ${n} ${open ? '▾' : '▸'}${!open && hides ? ' ●' : ''}`;
   return [
     { label: 'Result', columns: ['status', 'pv', 'pvCurrency', 'par'] },
     { label: 'Trade', columns: ['product', 'start', 'end', 'direction'] },
-    { label: expanded.leg1 ? 'Leg 1 ▾' : 'Leg 1 ▸', columns: leg(1, expanded.leg1) },
-    { label: expanded.leg2 ? 'Leg 2 ▾' : 'Leg 2 ▸', columns: leg(2, expanded.leg2) },
+    { label: caption(1, expanded.leg1, hidden.leg1), columns: leg(1, expanded.leg1) },
+    { label: caption(2, expanded.leg2, hidden.leg2), columns: leg(2, expanded.leg2) },
     { label: 'Terms', columns: ['collateral', 'mandatoryBreak', 'risk'] },
   ];
 }

@@ -12,6 +12,8 @@ public sealed class RatesSettings
     public MarketSetting SyntheticMarket { get; set; } = new();
     /// <summary>Advance the synthetic market on a clock. Off for tests that advance it themselves.</summary>
     public bool Ticker { get; set; } = true;
+    /// <summary>How long a live subscription runs with no page watching it before it stops (owner, 2026-10-27).</summary>
+    public int LiveIdleStopSeconds { get; set; } = 300;
 
     public ConventionRegistry Registry()
     {

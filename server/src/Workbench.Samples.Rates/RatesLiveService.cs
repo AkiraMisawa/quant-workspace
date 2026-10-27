@@ -23,13 +23,28 @@ public sealed record LiveInput(long Revision, DateOnly ValuationDate, IReadOnlyL
 /// <summary>The frame a subscription shows now, with the exact input it was calculated from: what capture saves.</summary>
 public sealed record ShownFrame(LiveDelivery Delivery, LiveInput Input);
 
+/// <summary>Why a live subscription stopped: the user asked, nobody watched it for the idle limit, or its workspace went.</summary>
+public enum LiveStopReason { User, Idle, Deleted }
+
+/// <summary>
+/// A workspace's live state, for a page that opens on it: the running subscription to attach to, or the last one
+/// stopped, why and when, with the frame it showed last. A stopped subscription is never resumed; Start makes a new one.
+/// </summary>
+public sealed record LiveStatus(string SubscriptionId, bool Running, int Viewers, LiveStopReason? StoppedBy, DateTimeOffset? StoppedAt,
+    TimeSpan IdleLimit, LiveDelivery? LastFrame);
+
 /// <summary>
 /// Runs live subscriptions (docs/07 §4, §6): each market update reaches every running subscription, whose rules
 /// (<see cref="LiveSubscription"/>) decide what to calculate; calculations run on at most a fixed number of
 /// workers; a frame is delivered only when the rules apply it. No Run is created for a tick. Market updates
 /// arrive through <see cref="PublishAsync"/>, so tests drive the service without a clock.
+///
+/// A workspace has at most one running subscription, on the server, whatever pages watch it: a page attaches to
+/// its frames and detaches when it goes. Once nobody has watched it for <c>idleLimit</c>, <see cref="SweepIdle"/>
+/// stops it, so nothing is calculated for nobody (decided with the owner, 2026-10-27).
 /// </summary>
-public sealed class RatesLiveService(IRatesPricingProvider provider, Func<string, MarketSnapshot?> resolveMarket, TimeProvider clock, int maxWorkers = 4)
+public sealed class RatesLiveService(IRatesPricingProvider provider, Func<string, MarketSnapshot?> resolveMarket, TimeProvider clock,
+    TimeSpan idleLimit, int maxWorkers = 4)
 {
     sealed class Entry(LiveSubscription rules, string workspaceId, LiveInput input)
     {
@@ -38,11 +53,14 @@ public sealed class RatesLiveService(IRatesPricingProvider provider, Func<string
         public LiveInput Input { get; set; } = input;
         public Dictionary<long, LiveInput> Inputs { get; } = new() { [input.Revision] = input };
         public ShownFrame? Shown { get; set; }
-        public Channel<LiveDelivery> Out { get; } = Channel.CreateBounded<LiveDelivery>(
-            new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
+        /// <summary>One channel per attached page: the newest frame only, when that page falls behind.</summary>
+        public List<Channel<LiveDelivery>> Viewers { get; } = [];
+        /// <summary>Since when nobody has watched it; null while someone does.</summary>
+        public DateTimeOffset? UnwatchedSince { get; set; }
     }
 
     readonly Dictionary<string, Entry> subscriptions = [];
+    readonly Dictionary<string, LiveStatus> stopped = [];
     readonly Lock gate = new();
     readonly SemaphoreSlim workers = new(maxWorkers, maxWorkers);
     MarketUpdate? latest;
@@ -52,15 +70,32 @@ public sealed class RatesLiveService(IRatesPricingProvider provider, Func<string
 
     public int Count { get { lock (gate) return subscriptions.Count; } }
 
+    public TimeSpan IdleLimit => idleLimit;
+
+    /// <summary>
+    /// Starts the workspace's live subscription, or answers the one already running, which then prices this input if
+    /// it is newer. Unwatched until a page attaches.
+    /// </summary>
     public string Start(string owner, string workspaceId, LiveInput input)
     {
         var id = $"live-{Guid.CreateVersion7():N}";
         LiveWork? work;
         lock (gate)
         {
-            var entry = new Entry(new LiveSubscription(id, owner, input.Revision), workspaceId, input);
-            subscriptions[id] = entry;
-            work = latest is null ? null : entry.Rules.OnMarket(latest);
+            var running = subscriptions.FirstOrDefault(s => s.Value.WorkspaceId == workspaceId);
+            if (running.Value is { } existing)
+            {
+                if (existing.Rules.Owner != owner) throw new KeyNotFoundException($"No live subscription on {workspaceId} for this user.");
+                id = running.Key;
+                work = input.Revision > existing.Rules.InputRevision ? Changed(existing, input) : null;
+            }
+            else
+            {
+                var entry = new Entry(new LiveSubscription(id, owner, input.Revision), workspaceId, input) { UnwatchedSince = clock.GetUtcNow() };
+                subscriptions[id] = entry;
+                stopped.Remove(workspaceId);
+                work = latest is null ? null : entry.Rules.OnMarket(latest);
+            }
         }
         Launch(work);
         return id;
@@ -77,29 +112,85 @@ public sealed class RatesLiveService(IRatesPricingProvider provider, Func<string
         {
             var entry = Owned(owner, subscriptionId);
             if (input.Revision <= entry.Rules.InputRevision) return;
-            entry.Input = input;
-            entry.Inputs[input.Revision] = input;
-            work = entry.Rules.OnInputChanged(input.Revision);
+            work = Changed(entry, input);
         }
         Launch(work);
     }
 
-    /// <summary>Stops and forgets the subscription. A calculation still running finishes and is discarded.</summary>
-    public void Stop(string owner, string subscriptionId)
+    LiveWork? Changed(Entry entry, LiveInput input)
+    {
+        entry.Input = input;
+        entry.Inputs[input.Revision] = input;
+        return entry.Rules.OnInputChanged(input.Revision);
+    }
+
+    /// <summary>Stops the subscription for every page watching it. A calculation still running finishes and is discarded.</summary>
+    public void Stop(string owner, string subscriptionId, LiveStopReason reason = LiveStopReason.User)
+    {
+        lock (gate) StopLocked(Owned(owner, subscriptionId), subscriptionId, reason);
+    }
+
+    void StopLocked(Entry entry, string subscriptionId, LiveStopReason reason)
+    {
+        entry.Rules.Stop();
+        foreach (var viewer in entry.Viewers) viewer.Writer.TryComplete();
+        subscriptions.Remove(subscriptionId);
+        if (reason == LiveStopReason.Deleted) stopped.Remove(entry.WorkspaceId);
+        else stopped[entry.WorkspaceId] = new LiveStatus(subscriptionId, false, 0, reason, clock.GetUtcNow(), idleLimit, entry.Shown?.Delivery);
+    }
+
+    /// <summary>
+    /// Attaches a page: it hears the frame shown now, if any, then every later one, the newest only when it falls
+    /// behind. Disposing the answer detaches it; the last page to go starts the idle limit.
+    /// </summary>
+    public (ChannelReader<LiveDelivery> Frames, IDisposable Detach) Attach(string owner, string subscriptionId)
     {
         lock (gate)
         {
             var entry = Owned(owner, subscriptionId);
-            entry.Rules.Stop();
-            entry.Out.Writer.TryComplete();
-            subscriptions.Remove(subscriptionId);
+            var channel = Channel.CreateBounded<LiveDelivery>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
+            if (entry.Shown is { } shown) channel.Writer.TryWrite(shown.Delivery);
+            entry.Viewers.Add(channel);
+            entry.UnwatchedSince = null;
+            return (channel.Reader, new Detacher(() =>
+            {
+                lock (gate)
+                {
+                    if (!entry.Viewers.Remove(channel)) return;
+                    if (entry.Viewers.Count == 0) entry.UnwatchedSince = clock.GetUtcNow();
+                }
+            }));
         }
     }
 
-    /// <summary>The frames a subscription shows, newest only when the reader falls behind. Ends when it stops.</summary>
-    public ChannelReader<LiveDelivery> Frames(string owner, string subscriptionId)
+    sealed class Detacher(Action detach) : IDisposable
     {
-        lock (gate) return Owned(owner, subscriptionId).Out.Reader;
+        int done;
+        public void Dispose() { if (Interlocked.Exchange(ref done, 1) == 0) detach(); }
+    }
+
+    /// <summary>Stops every subscription nobody has watched for the idle limit. Called on each market tick.</summary>
+    public int SweepIdle()
+    {
+        lock (gate)
+        {
+            var now = clock.GetUtcNow();
+            var idle = subscriptions.Where(s => s.Value.UnwatchedSince is { } since && now - since >= idleLimit).ToList();
+            foreach (var (id, entry) in idle) StopLocked(entry, id, LiveStopReason.Idle);
+            return idle.Count;
+        }
+    }
+
+    /// <summary>The workspace's live state: its running subscription, or the last one stopped; null when it never ran.</summary>
+    public LiveStatus? StatusOf(string owner, string workspaceId)
+    {
+        lock (gate)
+        {
+            var running = subscriptions.FirstOrDefault(s => s.Value.WorkspaceId == workspaceId && s.Value.Rules.Owner == owner);
+            if (running.Value is { } entry)
+                return new LiveStatus(running.Key, true, entry.Viewers.Count, null, null, idleLimit, entry.Shown?.Delivery);
+            return stopped.GetValueOrDefault(workspaceId);
+        }
     }
 
     /// <summary>The running subscriptions on a workspace, by owner, for the edit path to report a new input to.</summary>
@@ -190,7 +281,7 @@ public sealed class RatesLiveService(IRatesPricingProvider provider, Func<string
                 var delivery = new LiveDelivery(work.SubscriptionId, work.SubscriptionRevision, work.InputRevision, work.Market,
                     frame.CompletedAt, result.Provider, result.CalculationMode, result.Rows, input.NotPriced);
                 entry.Shown = new ShownFrame(delivery, input);
-                entry.Out.Writer.TryWrite(delivery);
+                foreach (var viewer in entry.Viewers) viewer.Writer.TryWrite(delivery);
             }
             foreach (var old in entry.Inputs.Keys.Where(r => r < entry.Rules.InputRevision && entry.Rules.InFlight?.InputRevision != r).ToList())
                 entry.Inputs.Remove(old);

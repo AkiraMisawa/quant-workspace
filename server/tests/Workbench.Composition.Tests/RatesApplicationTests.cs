@@ -28,7 +28,7 @@ public class RatesApplicationTests
     {
         var market = new SyntheticMarket(MarketConfig);
         var provider = new FakeRatesPricing();
-        var live = new RatesLiveService(provider, market.Resolve, TimeProvider.System);
+        var live = new RatesLiveService(provider, market.Resolve, TimeProvider.System, TimeSpan.FromMinutes(5));
         var feed = new MarketFeed(market, live);
         var store = new InMemoryDataStore();
         var runs = new RunService(new CompositionRegistry([new RatesModule(provider, market.Resolve)]), store, TimeProvider.System);
@@ -64,10 +64,15 @@ public class RatesApplicationTests
 
     static JsonNode Row(JsonNode dataset, string line) => dataset["rows"]!.AsArray().Single(r => r!["line"]!.GetValue<string>() == line)!;
 
+    // One page per subscription in these tests: attached once, read for every frame after.
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, System.Threading.Channels.ChannelReader<LiveDelivery>> Attached = new();
+
     static async Task<LiveDelivery> NextFrame(Rig rig, string subscription)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        return await rig.Live.Frames("akira", subscription).ReadAsync(timeout.Token);
+        if (!Attached.TryGetValue(subscription, out var frames))
+            Attached[subscription] = frames = rig.Live.Attach("akira", subscription).Frames;
+        return await frames.ReadAsync(timeout.Token);
     }
 
     [Fact] // docs/07 §3: Price pins a snapshot and prices the priceable lines; a line that is not is listed with why, never a zero

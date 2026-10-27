@@ -1,5 +1,5 @@
 import type { LineView, LiveFrame } from './contracts';
-import { lineColumns, lineHeaderGroups, lineRows, parserOf } from './lines';
+import { hiddenEdits, lineColumns, lineHeaderGroups, lineRows, parserOf } from './lines';
 
 const line = (name: string): LineView => ({
   line: name, fields: {}, userFields: [], priceable: true, parLeg: 1, spot: null, profiles: [], issues: [], held: [],
@@ -45,6 +45,15 @@ describe('the line grid', () => {
       for (const group of lineHeaderGroups(expanded)) for (const c of group.columns) expect(names.has(c)).toBe(true);
     }
     expect(lineColumns({ leg1: true, leg2: false }).length - lineColumns({ leg1: false, leg2: false }).length).toBe(9);
+  });
+
+  it('marks a collapsed leg whose hidden columns hold a value the user set, and only while it is collapsed', () => {
+    const edited = { ...line('L2'), userFields: ['leg2.lookback'] };
+    const hides = hiddenEdits([line('L1'), edited]);
+
+    expect(hides).toEqual({ leg1: false, leg2: true });
+    expect(lineHeaderGroups({ leg1: false, leg2: false }, hides).map((g) => g.label)).toContain('Leg 2 ▸ ●');
+    expect(lineHeaderGroups({ leg1: false, leg2: true }, hides).map((g) => g.label)).toContain('Leg 2 ▾');
   });
 
   it('marks figures of an older revision stale, and lists a line left out as not priced', () => {

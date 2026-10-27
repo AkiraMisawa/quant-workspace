@@ -43,6 +43,24 @@ export interface RatesWorkspaceView {
   /** What the last re-derivation of the schedules did to cashflow edits, if any moved. */
   readonly rederived: CarrySummary | null;
   readonly runs: readonly { readonly runId: string; readonly revision: number }[];
+  /** The workspace's live subscription: the running one to attach to, or the last one stopped; absent when it never ran. */
+  readonly live?: LiveStatus;
+}
+
+/**
+ * A workspace's live state (owner, 2026-10-27): one subscription per workspace on the server, which pages attach
+ * to; stopped by the user, or once nobody has watched it for the idle limit. A stopped one is never resumed.
+ */
+export interface LiveStatus {
+  readonly subscriptionId: string;
+  readonly running: boolean;
+  readonly viewers: number;
+  /** Absent while it runs: the server leaves an empty value out. */
+  readonly stoppedBy?: 'user' | 'idle' | 'deleted';
+  readonly stoppedAt?: string;
+  /** As .NET writes a TimeSpan: `hh:mm:ss`. */
+  readonly idleLimit: string;
+  readonly lastFrame?: LiveFrame;
 }
 
 export interface PeriodView {
