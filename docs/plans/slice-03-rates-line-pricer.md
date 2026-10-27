@@ -1,14 +1,14 @@
 # Slice 03: the Rates line pricer
 
 Status: plan, 2026-10-27. Implements the start of P4 (`docs/12-implementation-plan.md`) with the scope
-the owner added on 2026-10-27 (C37 to C39 in `docs/00-decisions.md`). Built on slice 02's branch.
+the owner added on 2026-10-27 (C37 to C42 in `docs/00-decisions.md`). Built on slice 02's branch.
 
 Every figure is synthetic until a real engine is selected. The first provider is a deterministic fake
 labelled `simulated calculation`; the market is a seeded synthetic source labelled `synthetic`.
 
 ## Goal
 
-A user types an interest-rate swap, a cross-currency swap or a swaption on one ExGrid row, sees the
+A user types an interest-rate swap or a cross-currency swap on one ExGrid row, sees the
 standard cashflow schedule generated from it in the row's detail panel, customises cashflows there, and
 gets PV, the par rate (or the fair spread with its target leg) and risk, both on a manual Price and
 ticking live against the synthetic market.
@@ -23,11 +23,12 @@ ticking live against the synthetic market.
 
 ## Waiting on the owner
 
-Questions of 2026-10-27, recorded as OPEN in C37 to C39: swaption product scope and volatility model;
-which risk measures and bumps; the first currencies and indices and the one-line syntax; the first
-cross-currency structure; which cashflow fields can be customised; and what happens to customised
-cashflows when the one-line terms change. No convention, measure definition or schedule rule is
-invented in the meantime.
+Answered on 2026-10-27: no swaptions for now; risk is the analytics' automatic-differentiation
+sensitivities; the basic row terms (C40); JPY, USD, EUR, GBP (C41); the first cross-currency structure
+(C42); the carry check for customised cashflows (C39). Still OPEN: the EUR and GBP indices, each
+currency's conventions, the risk factors sensitivities are reported against, and the levels of terms
+beyond the basic one. No convention is invented meanwhile: the schedule generator takes every
+convention from an explicit profile, and only confirmed profiles are registered.
 
 ## Acceptance
 

@@ -4,7 +4,7 @@
 
 The rates pricer is one of the first fixed workflow applications built on the platform. A user defines interest-rate swaps or cross-currency swaps as editable one-line grid rows and receives mark-to-market values and an explicitly defined fair-rate or fair-spread measure. The same calculation capabilities remain callable from workflows and the AI interface.
 
-Since 2026-10-27 the page also prices swaptions, calculates risk, and generates a standard cashflow schedule from each row that the row's detail panel can customise ([C37 to C39](00-decisions.md)). The client is React ([ADR-0001](adr/0001-the-client-is-react-with-ex-grid.md)), not Blazor as stated below.
+Since 2026-10-27 the page also calculates risk (sensitivities by automatic differentiation in the analytics), and generates a standard cashflow schedule from each row that the row's detail panel can customise. The row's terms and the initial currencies are in [C37 to C42](00-decisions.md); swaptions are out of scope for now. The client is React ([ADR-0001](adr/0001-the-client-is-react-with-ex-grid.md)), not Blazor as stated below.
 
 **Confirmed requirements**
 
