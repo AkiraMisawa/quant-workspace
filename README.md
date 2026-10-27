@@ -29,7 +29,8 @@ nix develop -c bash -c 'cd client && npm ci && npm run typecheck && npm test'
 # Client build: written into server/src/Workbench.Web/wwwroot, which the host serves
 nix develop -c bash -c 'cd client && npm run build'
 
-# Run the workbench on http://localhost:5080 (after the client build)
+# Run the workbench on http://localhost:5080 (after the client build). Workspaces, Runs and results are
+# kept in server/src/Workbench.Web/App_Data/workbench.db unless Workbench__Database names another file.
 nix develop -c dotnet run --project server/src/Workbench.Web --urls http://localhost:5080
 
 # Development: Vite on http://localhost:5173, forwarding /api to the host above
@@ -41,7 +42,8 @@ nix develop -c bash -c 'cd client && npm run build && npx playwright test'
 
 Playwright uses its own Chromium (`npx playwright install chromium`). Where a Chromium is already
 installed for another Playwright version, name it with `PLAYWRIGHT_CHROMIUM=/path/to/chrome`.
-`WORKBENCH_PORT` moves the host to another port.
+`WORKBENCH_PORT` moves the host to another port. Each browser run starts the host on a database file of its own in the
+temporary directory (`WORKBENCH_DB` names one instead).
 
 To re-vendor ExGrid from another commit: check out the commit in an ex-grid clone and run `tools/ex-grid/vendor.sh <ex-grid checkout>`; it writes the commit into `vendor/ex-grid/PIN`.
 

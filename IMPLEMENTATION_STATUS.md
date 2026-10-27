@@ -1,6 +1,6 @@
 # Implementation status
 
-Last updated 2026-10-26. Commands are in [README.md](README.md).
+Last updated 2026-10-27. Commands are in [README.md](README.md).
 
 ## Slice 01: the generic workbench
 
@@ -59,16 +59,72 @@ Every provider is simulated. All data is synthetic and labelled as such on scree
 
 ### Known limits
 
-- Storage is in memory. Runs and retained data are lost when the host restarts, and nothing is durable yet.
+- Storage was in memory in slice 01; slice 02 moved Runs, retained data and workspaces to SQLite.
 - There is no AG-UI or AI path yet. No authentication.
 - Palette focus is handled by the shell itself: opening the palette and choosing a command let go of the focused element first. Keys typed before the next surface has the keyboard are dropped, never delivered to the grid behind or to a closing palette.
 
+## Slice 02: the XVA workspace and the Pricing DB
+
+Plan: [docs/plans/slice-02-xva-workspace.md](docs/plans/slice-02-xva-workspace.md). Decisions: ADR-0003 §6 (resolved), §7 (built as proposed, still OPEN for the owner's review), C30 to C36 in `docs/00-decisions.md`.
+
+### What runs
+
+- **Generic workspace kernel** (`Workbench.Composition.Application/Workspaces`): an append-only edit log, overrides with their base, the carry check (carried, conflicted, lost), conflict groups, `DropScope` with the confirmed count, an atomic counterparty change (`ChangeScope`), and `Freeze` refused while a priced entity holds an unresolved edit. Every command names the revision it was taken against.
+- **SQLite** (`Workbench.Persistence.Sqlite`, Microsoft.Data.Sqlite 10.0.14 with SQLitePCLRaw 2.1.13): one file holds generic tables for every domain: `Workspace` (current state), `EditLog` (append-only, `domain_kind` per entry), `AnalysisRun`, `SubmissionKey` and `RetainedData`. A workspace is restored after a restart from its source descriptor, and a descriptor that now acquires another version is refused. Deleting a workspace keeps its log. A Run left running by a stopped process is recorded as failed with code `Interrupted`.
+- **Runs** record their owner, origin (`pricer`, `ai`, `workflow`, `action`), explicit relations (workspace and revision, parent Run, analysis group, conversation) and the result contracts their workflow declares. Idempotency keys are per owner and survive a restart.
+- **Synthetic XVA module** (`Workbench.Samples.Xva`): three registrations (two share code ABC under different legal entities), agreements with CSAs and one uncollateralised (`nocsa_MA-003`), up to 100,000 generated existing trades per counterparty (matured ones are absent at a later date, and the last fixing moves with the date), three draft trades that belong to no counterparty, an empty CVA recovery on LE-01. The rules: a new trade takes the main CSA, a curve follows its CSA (including a CSA curve edit) unless the user set it, an uncollateralised trade starts on the profile curve, an ineligible CSA is an issue on the row and Price refuses it. A simulated CVA/FVA provider prices Before and After independently and falls back to the CDS recovery when the CVA recovery is empty.
+- **HTTP**: `/api/xva/...` creates a workspace, pages effective rows (sorted on the server, Blank last as ExGrid's ADR-0023), edits, resolves held edits, moves the value date, previews and confirms a counterparty change, prices and deletes. `/api/history/...` serves the Pricing DB.
+- **Pricing DB**: every Run newest first; a module registers a history projection; the XVA view adds value date, registration, trade counts, CVA and FVA Before, After and incremental. An unknown domain is refused.
+- **Client**: the XVA workspace page (ExGrid over a fetching source with a Row Key; user-set, held and invalid cells painted as Cell States with their reasons; a counterparty change that shows what it drops by edit kind and asks first; Price as a button and the `Price XVA workspace` command) and the Pricing DB page (one domain at a time, `Open` opens a Run). `New XVA workspace` (Ctrl+Alt+N), `Open Pricing DB` (Ctrl+Alt+H) and `Price XVA workspace` (Ctrl+Alt+P) are palette commands.
+
+### Verification performed
+
+| Suite | Result |
+|---|---|
+| `dotnet test server/Workbench.slnx` | 58 passed |
+| `npm test` (Vitest) | 21 passed |
+| `npx playwright test` (Chromium, headless, Linux) | 7 passed; the two new XVA tests also with `--repeat-each=3` (6 passed) |
+
+| Acceptance | Status |
+|---|---|
+| XV01, XV15, XV16, C24 | Passed (xUnit; Playwright shows the main CSA and the following curve) |
+| Before and After independent (CLAUDE.md) | Passed (xUnit) |
+| ADR-0003 §6: saved per edit, frozen at Price, survives a restart | Passed (xUnit on SQLite). The browser reload case is not tested yet. |
+| ADR-0003 §6: counterparty change asks before dropping | Passed (xUnit and Playwright) |
+| ADR-0003 §7: carried, lost, Price refused while unresolved | Passed (xUnit). A conflict cannot arise in the synthetic XVA data yet, since no editable field changes between value dates; it is covered on the kernel only. |
+| Pricing DB | Passed (xUnit; Playwright: a Price lands in the list with origin `pricer` and in the XVA view with its figures) |
+| EX06, a failed case shown unavailable in the browser | Not yet |
+
+### Measurements
+
+Release build on this Linux container, one request at a time with `curl`, at portfolio sizes of 10,000 and 50,000 requested existing trades (7,000 and 35,137 alive on 2026-10-26). Recorded, not gated; no target is agreed.
+
+| Step | 10,000 | 50,000 |
+|---|---|---|
+| Create the workspace | 199 ms | 317 ms |
+| First page of 120 rows, unsorted | 26 ms | 2 ms |
+| A page in the middle under a new sort (first sort of that order) | 44 ms | 133 ms |
+| Edit one trade | 24 ms | 11 ms |
+| Edit a CSA's curve, reaching every trade on it | 46 ms | 149 ms |
+| Move the value date (re-acquire and carry) | 114 ms | 336 ms |
+| Price accepted (freeze, build and store the accepted input) | 295 ms | 963 ms |
+
+Rows without an edit of their own are computed once per source version and set of CSA curve edits; a sorted order is kept per state. Scrolling in the browser at these sizes was not measured.
+
+### Providers
+
+Every provider is simulated and every figure synthetic, labelled `simulated` in the result and the Pricing DB.
+
+### Known limits
+
+- The trades grid does not filter: a filter set from a column header is refused with a message, not ignored. Paste is not wired.
+- Requests act as one configured demo user (`Workbench:DemoUser`) until ME-ID sign-in (C30); roles (C31) are not enforced, so a user sees only their own Runs.
+- Run views are matched to Runs by output name, not by contract.
+- Touch waits for ExGrid's touch release (C36).
+
 ## Next
 
-1. Slice 01b: Save and Pin (CO06), and the browser parts of CO03 and CO04.
-2. The XVA workspace slice ([ADR-0003](docs/adr/0003-client-state-and-the-effective-pricing-input.md)):
-   - a server-authoritative workspace with an edit log;
-   - effective rows paged into ExGrid through `GridSource`;
-   - measurements at 10k and 50k trades.
-   It is waiting on the owner's confirmation of how changes are stored (ADR-0003 §6).
-3. Rates, IM/SIMM, AI over AG-UI, and run history.
+1. The owner's review of ADR-0003 §7 (scopes, carry and conflict), then a synthetic source change that can produce a conflict, and the browser cases still open above (reload, failed case unavailable).
+2. MVA with SIMM (`docs/12-implementation-plan.md` P2), then Rates.
+3. ME-ID sign-in through MSAL (C30) and the visibility rules (C31, C32); AI over AG-UI with the company's Copilot behind the adapter port (C34).
+4. Slice 01b: Save and Pin (CO06), and the browser parts of CO03 and CO04.

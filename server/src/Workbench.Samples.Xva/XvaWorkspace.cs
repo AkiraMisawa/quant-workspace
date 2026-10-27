@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using Workbench.Composition.Application.Workspaces;
 
@@ -75,8 +77,26 @@ public static class XvaMaterialiser
         var overrides = state.Overrides.Values.ToDictionary(o => (o.Target.Entity, o.Target.Field), o => o.Value);
         var held = state.Conflicts.Keys.Select(t => (t, "conflict")).Concat(state.Lost.Keys.Select(t => (t, "lost")))
             .ToLookup(x => x.t.Entity, x => $"{x.t.Field}: {x.Item2}");
-        return [.. source.Existing.Concat(source.New).Select(t => Trade(source, t, overrides, held))];
+        // Most rows carry no edit of their own: they are the source under the rules and the CSA curves, which
+        // are computed once per source version and set of CSA curve edits. Only the rows the user touched, or
+        // that hold an edit back, are worked out again.
+        var csaCurves = overrides.Where(o => Entity.Split(o.Key.Entity).Kind == Entity.Csa).OrderBy(o => o.Key.Entity, StringComparer.Ordinal)
+            .ToDictionary(o => o.Key, o => o.Value);
+        var fingerprint = string.Join("|", csaCurves.Select(o => $"{o.Key.Entity}.{o.Key.Field}={o.Value?.ToJsonString()}"));
+        var untouched = Untouched.GetOrCreateValue(source).GetOrAdd(fingerprint, _ =>
+            [.. source.Existing.Concat(source.New).Select(t => Trade(source, t, csaCurves, Nothing))]);
+        var touched = overrides.Keys.Select(k => k.Entity).Concat(held.Select(h => h.Key))
+            .Where(e => Entity.Split(e).Kind == Entity.Trade).ToHashSet();
+        if (touched.Count == 0) return untouched;
+        var rows = (EffectiveTrade[])untouched.Clone();
+        for (var i = 0; i < rows.Length; i++)
+            if (touched.Contains(Entity.Of(Entity.Trade, rows[i].TradeId)))
+                rows[i] = Trade(source, source.Trade(rows[i].TradeId)!, overrides, held);
+        return rows;
     }
+
+    static readonly ConditionalWeakTable<XvaSourceVersion, ConcurrentDictionary<string, EffectiveTrade[]>> Untouched = new();
+    static readonly ILookup<string, string> Nothing = Array.Empty<(string, string)>().ToLookup(x => x.Item1, x => x.Item2);
 
     /// <summary>The entities Price would read: trades in Before or After, the CSAs they use, and the credit inputs.</summary>
     public static Func<string, bool> PricedEntities(WorkspaceState state)
@@ -109,7 +129,7 @@ public static class XvaMaterialiser
             : new(o.Value?.GetValue<decimal>(), Ownership.User, source.CdsRecovery);
     }
 
-    static EffectiveTrade Trade(XvaSourceVersion source, SourceTrade t, Dictionary<(string, string), JsonNode?> overrides, ILookup<string, string> held)
+    static EffectiveTrade Trade(XvaSourceVersion source, SourceTrade t, IReadOnlyDictionary<(string, string), JsonNode?> overrides, ILookup<string, string> held)
     {
         var entity = Entity.Of(Entity.Trade, t.TradeId);
         bool Has(string field, out JsonNode? value) => overrides.TryGetValue((entity, field), out value);

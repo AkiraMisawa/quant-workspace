@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
@@ -45,6 +46,7 @@ public sealed class XvaWorkspaces(WorkspaceService workspaces, IDataStore store,
 {
     // Effective rows per immutable state: a page request at the same revision does not materialise again.
     readonly ConditionalWeakTable<WorkspaceState, IReadOnlyList<EffectiveTrade>> materialised = new();
+    readonly ConditionalWeakTable<WorkspaceState, ConcurrentDictionary<string, IReadOnlyList<EffectiveTrade>>> sorted = new();
 
     public static readonly IReadOnlyList<string> SortableColumns =
         ["tradeId", "isNew", "product", "currency", "notional", "maturity", "fixedRate", "schedule", "lastFixing", "csa", "curve", "before", "after"];
@@ -86,18 +88,17 @@ public sealed class XvaWorkspaces(WorkspaceService workspaces, IDataStore store,
             };
             return (sort.Column, Descending: descending);
         }).ToList();
-        IEnumerable<EffectiveTrade> rows = Rows(state);
-        // A stable sort: rows equal under every key keep the source's order.
-        var ordered = keys.Count == 0 ? rows : rows.Order(Comparer<EffectiveTrade>.Create((a, b) =>
-        {
-            foreach (var (column, descending) in keys)
-                if (Compare(Key(a, column), Key(b, column), descending) is var c && c != 0) return c;
-            return 0;
-        }));
-        var all = ordered.ToList();
+        // A stable sort, kept per state and sort while the state is alive: scrolling asks for many pages of one order.
+        var all = keys.Count == 0 ? Rows(state) : sorted.GetOrCreateValue(state).GetOrAdd(string.Join(",", keys.Select(k => $"{k.Column}:{k.Descending}")), _ =>
+            [.. Rows(state).Order(Comparer<EffectiveTrade>.Create((a, b) =>
+            {
+                foreach (var (column, descending) in keys)
+                    if (Compare(Key(a, column), Key(b, column), descending) is var c && c != 0) return c;
+                return 0;
+            }))]);
         // Unsorted, the order is the source's and moves only with a new version; sorted, any edit may move it.
         var token = sorts.Count == 0 ? state.Source.Version : $"{state.Source.Version}/r{state.Revision}";
-        var page = start >= all.Count ? [] : all.GetRange(start, Math.Min(count, all.Count - start));
+        var page = start >= all.Count ? [] : all.Skip(start).Take(count).ToList();
         return new(page, start, all.Count, token, state.Revision);
     }
 
