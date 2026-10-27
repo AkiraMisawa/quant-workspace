@@ -130,7 +130,10 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
             state.Overrides.ToImmutableDictionary(o => o.Target),
             state.Conflicts.ToImmutableDictionary(c => c.Override.Target),
             state.Lost.ToImmutableDictionary(l => l.Override.Target),
-            [.. ReadLog(connection, workspaceId)]);
+            [.. ReadLog(connection, workspaceId)])
+        {
+            Created = (state.Created ?? []).ToImmutableDictionary(c => c.Entity),
+        };
     }
 
     public IReadOnlyList<string> OwnedBy(string owner)
@@ -162,7 +165,9 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
         return [.. ReadLog(connection, workspaceId)];
     }
 
-    sealed record StoredState(IReadOnlyList<Override> Overrides, IReadOnlyList<Conflict> Conflicts, IReadOnlyList<LostTarget> Lost);
+    // Created is absent from states stored before ADR-0004, which created nothing.
+    sealed record StoredState(IReadOnlyList<Override> Overrides, IReadOnlyList<Conflict> Conflicts, IReadOnlyList<LostTarget> Lost,
+        IReadOnlyList<CreatedEntity>? Created = null);
 
     static void Bind(SqliteCommand command, WorkspaceState state, DateTimeOffset at)
     {
@@ -173,7 +178,8 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
         command.Parameters.AddWithValue("$state", JsonSerializer.Serialize(new StoredState(
             [.. state.Overrides.Values.OrderBy(o => o.Seq)],
             [.. state.Conflicts.Values.OrderBy(c => c.Override.Seq)],
-            [.. state.Lost.Values.OrderBy(l => l.Override.Seq)]), Json));
+            [.. state.Lost.Values.OrderBy(l => l.Override.Seq)],
+            [.. state.Created.Values.OrderBy(c => c.Seq)]), Json));
         command.Parameters.AddWithValue("$at", SqliteFile.Text(at));
     }
 
@@ -198,7 +204,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
             parameters["$entity"].Value = (object?)e.Target?.Entity ?? DBNull.Value;
             parameters["$field"].Value = (object?)e.Target?.Field ?? DBNull.Value;
             // A value set to empty is the JSON literal null; a NULL column means the entry carries no value.
-            parameters["$value"].Value = e.Kind is EditKind.Set or EditKind.KeepOverride || e.Value is not null
+            parameters["$value"].Value = e.Kind is EditKind.Set or EditKind.KeepOverride or EditKind.Create || e.Value is not null
                 ? (e.Value?.ToJsonString() ?? "null") : DBNull.Value;
             parameters["$note"].Value = (object?)e.Note ?? DBNull.Value;
             command.ExecuteNonQuery();

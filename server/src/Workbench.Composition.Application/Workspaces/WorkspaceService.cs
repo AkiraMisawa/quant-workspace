@@ -21,6 +21,24 @@ public sealed record WorkspaceState(
 {
     public long Revision => Log.Count == 0 ? 0 : Log[^1].Seq;
 
+    /// <summary>The entities the user created in this workspace (ADR-0004), by entity.</summary>
+    public ImmutableDictionary<string, CreatedEntity> Created { get; init; } = ImmutableDictionary<string, CreatedEntity>.Empty;
+
+    /// <summary>The module's derived sources as of this revision, by derivation scope (ADR-0004). Never stored: derived again on load.</summary>
+    public ImmutableDictionary<string, ISourceVersion> Derived { get; init; } = ImmutableDictionary<string, ISourceVersion>.Empty;
+
+    /// <summary>The source an edit on this target is read against: its derivation scope's, its created entity's, or the acquired one.</summary>
+    public ISourceVersion SourceOf(EditTarget target) =>
+        Derived.TryGetValue(target.Scope, out var derived) ? derived
+        : Created.TryGetValue(target.Entity, out var created) ? new CreatedSource(created)
+        : Source;
+
+    /// <summary>What the derivation run by the last command did to the edits (ADR-0004); null when no derived scope moved. Not stored.</summary>
+    public CarrySummary? Rederived { get; init; }
+
+    /// <summary>True when the target is read from the acquired source, which a re-acquisition replaces.</summary>
+    public bool IsAcquired(EditTarget target) => !Derived.ContainsKey(target.Scope) && !Created.ContainsKey(target.Entity);
+
     /// <summary>How many edits of each module kind a scope holds, for the confirmation before dropping it.</summary>
     public IReadOnlyDictionary<EditTarget, Override> InScope(string scope) =>
         Overrides.Values.Concat(Conflicts.Values.Select(c => c.Override)).Concat(Lost.Values.Select(l => l.Override))
@@ -107,10 +125,11 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
         {
             if (state.Conflicts.ContainsKey(target))
                 throw new WorkspaceRefused("ConflictUnresolved", "Keep or take the source value before editing this field again.", [target]);
-            if (state.Source.Read(target.Entity, target.Field) is null)
+            var source = state.SourceOf(target);
+            if (source.Read(target.Entity, target.Field) is null)
                 throw new WorkspaceRefused("UnknownTarget", $"{target.Entity} has no field {target.Field} in this version.", [target]);
             var seq = state.Revision + 1;
-            var item = new Override(target, value?.DeepClone(), Carry.BaseOf(target, state.Source, RulesOf(state.App)), state.Source.Version, seq);
+            var item = new Override(target, value?.DeepClone(), Carry.BaseOf(target, source, RulesOf(state.App)), source.Version, seq);
             return state with
             {
                 Overrides = state.Overrides.SetItem(target, item),
@@ -177,6 +196,47 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
         });
 
     /// <summary>
+    /// Creates an entity the workspace holds (ADR-0004), with the module's initial field values as its source
+    /// values. The module names the entity; one that exists already is refused.
+    /// </summary>
+    public WorkspaceState Create(string workspaceId, long expectedRevision, string user, string scope, string entity, JsonObject fields) =>
+        Apply(workspaceId, expectedRevision, state =>
+        {
+            if (state.Created.ContainsKey(entity))
+                throw new WorkspaceRefused("EntityExists", $"{entity} exists already.");
+            var seq = state.Revision + 1;
+            var target = new EditTarget(scope, entity, "*");
+            return state with
+            {
+                Created = state.Created.Add(entity, new CreatedEntity(scope, entity, (JsonObject)fields.DeepClone(), seq)),
+                Log = state.Log.Add(Entry(state, seq, user, EditKind.Create, target, fields)),
+            };
+        });
+
+    /// <summary>
+    /// Removes a created entity. Its own overrides and conflicts end with it, counted in the log entry's note: the
+    /// user removed them, so they are not lost targets to acknowledge. What was derived from it is checked when the
+    /// derivation runs.
+    /// </summary>
+    public WorkspaceState Remove(string workspaceId, long expectedRevision, string user, string entity) =>
+        Apply(workspaceId, expectedRevision, state =>
+        {
+            if (!state.Created.TryGetValue(entity, out var created))
+                throw new WorkspaceRefused("UnknownEntity", $"{entity} was not created in this workspace.");
+            var seq = state.Revision + 1;
+            var gone = state.Overrides.Keys.Concat(state.Conflicts.Keys).Concat(state.Lost.Keys)
+                .Where(t => t.Entity == entity && !state.Derived.ContainsKey(t.Scope)).Distinct().ToList();
+            return state with
+            {
+                Created = state.Created.Remove(entity),
+                Overrides = state.Overrides.RemoveRange(gone),
+                Conflicts = state.Conflicts.RemoveRange(gone),
+                Lost = state.Lost.RemoveRange(gone),
+                Log = state.Log.Add(Entry(state, seq, user, EditKind.Remove, new EditTarget(created.Scope, entity, "*"), null, $"{gone.Count} edits")),
+            };
+        });
+
+    /// <summary>
     /// Adopts a new context and source version within the same scopes (a value date change, a refresh), and
     /// checks every override against it: carried, conflicted, or lost.
     /// </summary>
@@ -217,47 +277,93 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
 
     (WorkspaceState, CarrySummary) ReacquireOn(WorkspaceState state, string user, JsonObject context, ISourceVersion source)
     {
-        var rules = RulesOf(state.App);
-        var all = state.Overrides.Values
-            .Concat(state.Conflicts.Values.Select(c => c.Override))
-            .Concat(state.Lost.Values.Select(l => l.Override));
-        var overrides = ImmutableDictionary.CreateBuilder<EditTarget, Override>();
-        var conflicts = ImmutableDictionary.CreateBuilder<EditTarget, Conflict>();
-        var lost = ImmutableDictionary.CreateBuilder<EditTarget, LostTarget>();
-        foreach (var item in all)
-            switch (Carry.Check(item, source, rules))
-            {
-                case CarryOutcome.Carried c: overrides[item.Target] = c.Override; break;
-                case CarryOutcome.Conflicted c: conflicts[item.Target] = c.Conflict; break;
-                case CarryOutcome.Lost l: lost[item.Target] = l.Target; break;
-            }
+        // Only what the acquired source holds is checked against the new one; created and derived entities are not
+        // in it (ADR-0004), and a derivation that reads the new context runs after the command.
+        var (carried, summary) = CarryWhere(state, state.IsAcquired, source);
         var seq = state.Revision + 1;
-        var next = state with
+        var next = carried with
         {
             Context = (JsonObject)context.DeepClone(),
             Source = source,
-            Overrides = overrides.ToImmutable(),
-            Conflicts = conflicts.ToImmutable(),
-            Lost = lost.ToImmutable(),
             Log = state.Log
                 .Add(Entry(state, seq, user, EditKind.Context, null, context))
                 .Add(Entry(state, seq + 1, user, EditKind.Acquire, null, Acquired(source))),
         };
-        return (next, new(overrides.Count, conflicts.Count, lost.Count));
+        return (next, summary);
+    }
+
+    /// <summary>Checks the overrides, conflicts and lost edits the filter selects against a source; the rest stay as they are.</summary>
+    (WorkspaceState, CarrySummary) CarryWhere(WorkspaceState state, Func<EditTarget, bool> selected, ISourceVersion source)
+    {
+        var rules = RulesOf(state.App);
+        var all = state.Overrides.Values
+            .Concat(state.Conflicts.Values.Select(c => c.Override))
+            .Concat(state.Lost.Values.Select(l => l.Override))
+            .Where(o => selected(o.Target))
+            .ToList();
+        var overrides = state.Overrides.ToBuilder();
+        var conflicts = state.Conflicts.ToBuilder();
+        var lost = state.Lost.ToBuilder();
+        var (c1, c2, c3) = (0, 0, 0);
+        foreach (var item in all)
+        {
+            overrides.Remove(item.Target);
+            conflicts.Remove(item.Target);
+            lost.Remove(item.Target);
+            switch (Carry.Check(item, source, rules))
+            {
+                case CarryOutcome.Carried c: overrides[item.Target] = c.Override; c1++; break;
+                case CarryOutcome.Conflicted c: conflicts[item.Target] = c.Conflict; c2++; break;
+                case CarryOutcome.Lost l: lost[item.Target] = l.Target; c3++; break;
+            }
+        }
+        return (state with { Overrides = overrides.ToImmutable(), Conflicts = conflicts.ToImmutable(), Lost = lost.ToImmutable() }, new(c1, c2, c3));
+    }
+
+    /// <summary>
+    /// Runs the module's derivation (ADR-0004) and checks the edits of every derivation scope whose version changed
+    /// against its new source; a scope that is gone leaves its edits without a target.
+    /// </summary>
+    WorkspaceState Rederive(WorkspaceState state)
+    {
+        var derived = RulesOf(state.App).Derive(state).ToImmutableDictionary();
+        if (derived.Count == 0 && state.Derived.Count == 0) return state with { Rederived = null };
+        var next = state with { Derived = derived, Rederived = null };
+        CarrySummary? total = null;
+        foreach (var scope in state.Derived.Keys.Union(derived.Keys).Order(StringComparer.Ordinal))
+        {
+            var before = state.Derived.GetValueOrDefault(scope);
+            var after = derived.GetValueOrDefault(scope);
+            if (before is not null && after is not null && before.Version == after.Version) continue;
+            var source = after ?? new EmptySource($"gone:{state.Revision}");
+            (next, var summary) = CarryWhere(next, t => t.Scope == scope, source);
+            total = new((total?.Carried ?? 0) + summary.Carried, (total?.Conflicted ?? 0) + summary.Conflicted, (total?.Lost ?? 0) + summary.Lost);
+            // The log says why edits in the scope became conflicts or lost: the scope moved to this version.
+            next = next with
+            {
+                Log = next.Log.Add(new EditEntry(next.Revision + 1, clock.GetUtcNow(), "derivation", EditKind.Derive, null, null,
+                    new JsonObject { ["scope"] = scope, ["version"] = source.Version },
+                    $"{summary.Carried} carried, {summary.Conflicted} conflicted, {summary.Lost} lost")),
+            };
+        }
+        return next with { Rederived = total };
     }
 
     WorkspaceState DropOn(WorkspaceState state, string user, string scope, int confirmedCount)
     {
+        // Entities the user created in the scope go with it, and count as edits the user confirmed (ADR-0004).
         var dropped = state.InScope(scope);
-        if (dropped.Count != confirmedCount)
-            throw new WorkspaceRefused("ConfirmationStale", $"The scope holds {dropped.Count} edits; {confirmedCount} were confirmed.");
+        var created = state.Created.Values.Where(c => c.Scope == scope).Select(c => c.Entity).ToList();
+        if (dropped.Count + created.Count != confirmedCount)
+            throw new WorkspaceRefused("ConfirmationStale", $"The scope holds {dropped.Count + created.Count} edits; {confirmedCount} were confirmed.");
         var seq = state.Revision + 1;
         return state with
         {
+            Created = state.Created.RemoveRange(created),
             Overrides = state.Overrides.RemoveRange(dropped.Keys),
             Conflicts = state.Conflicts.RemoveRange(dropped.Keys),
             Lost = state.Lost.RemoveRange(dropped.Keys),
-            Log = state.Log.Add(Entry(state, seq, user, EditKind.DropScope, null, JsonValue.Create(scope), $"{dropped.Count} edits")),
+            Log = state.Log.Add(Entry(state, seq, user, EditKind.DropScope, null, JsonValue.Create(scope), $"{dropped.Count + created.Count} edits")),
         };
     }
 
@@ -295,7 +401,7 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
             var state = Get(workspaceId);
             if (state.Revision != expectedRevision)
                 throw new WorkspaceRefused("RevisionMoved", $"The workspace is at revision {state.Revision}, not {expectedRevision}.");
-            var next = change(state);
+            var next = Rederive(change(state));
             store.Commit(state, next, clock.GetUtcNow());
             workspaces[workspaceId] = next;
             return next;
@@ -305,7 +411,9 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
     WorkspaceState? Cached(string workspaceId)
     {
         if (workspaces.TryGetValue(workspaceId, out var state)) return state;
-        if (store.Load(workspaceId) is not { } loaded) return null;
+        if (store.Load(workspaceId) is not { } stored) return null;
+        // Derived sources are a function of the stored state, so deriving again restores them as they were.
+        var loaded = stored with { Derived = RulesOf(stored.App).Derive(stored).ToImmutableDictionary() };
         workspaces[workspaceId] = loaded;
         return loaded;
     }
