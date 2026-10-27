@@ -190,6 +190,7 @@ export interface RunRecord {
   readonly owner: string;
   readonly origin: RunOrigin;
   readonly relations: RunRelations;
+  readonly resultContracts: readonly string[];
 }
 
 /** What started a Run (docs/05 §7). */

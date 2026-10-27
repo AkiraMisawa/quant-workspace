@@ -119,4 +119,43 @@ public class XvaApiTests(WorkbenchFactory factory) : IClassFixture<WorkbenchFact
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         Assert.Equal("InvalidValue", (await response.Content.ReadFromJsonAsync<JsonObject>())!["code"]!.GetValue<string>());
     }
+
+    [Fact] // docs/05 §7: the Pricing DB lists every origin together, and the XVA view lists XVA Runs with their figures
+    public async Task The_pricing_db_lists_every_origin_and_the_xva_view_its_figures()
+    {
+        var ws = await Create(size: 30);
+        var priced = await Post(ws, "price", new { revision = Revision(ws), idempotencyKey = Guid.NewGuid().ToString() });
+        var xvaRun = (await priced.Content.ReadFromJsonAsync<JsonObject>())!["runId"]!.GetValue<string>();
+        var catalog = (await client.GetFromJsonAsync<JsonObject>("/api/catalog"))!;
+        var workflow = catalog["workflows"]!.AsArray().Single(w => w!["definitionId"]!.GetValue<string>() == "workflow.sample.station-summary")!.DeepClone();
+        var other = await client.PostAsJsonAsync("/api/runs", new JsonObject
+        {
+            ["workflow"] = workflow, ["context"] = new JsonObject { ["region"] = "North", ["asOf"] = "2026-10-26" },
+            ["input"] = new JsonObject { ["days"] = 3 }, ["idempotencyKey"] = Guid.NewGuid().ToString(),
+        });
+        var otherRun = (await other.Content.ReadFromJsonAsync<JsonObject>())!["runId"]!.GetValue<string>();
+        JsonObject run;
+        do run = (await client.GetFromJsonAsync<JsonObject>($"/api/runs/{xvaRun}"))!;
+        while (run["status"]!.GetValue<string>() == "running");
+
+        var all = (await (await client.PostAsJsonAsync("/api/history/rows", new { domain = (string?)null, start = 0, count = 2000 })).Content.ReadFromJsonAsync<JsonObject>())!;
+        var xva = (await (await client.PostAsJsonAsync("/api/history/rows", new { domain = "xva", start = 0, count = 2000 })).Content.ReadFromJsonAsync<JsonObject>())!;
+
+        var origins = all["rows"]!.AsArray().ToDictionary(r => r!["runId"]!.GetValue<string>(), r => r!["origin"]!.GetValue<string>());
+        Assert.Equal(("pricer", "workflow"), (origins[xvaRun], origins[otherRun]));
+        var xvaRows = xva["rows"]!.AsArray().Select(r => r!.AsObject()).ToList();
+        Assert.DoesNotContain(xvaRows, r => r["runId"]!.GetValue<string>() == otherRun);
+        var row = xvaRows.Single(r => r["runId"]!.GetValue<string>() == xvaRun);
+        Assert.Equal((Id(ws), "ABC/LE-01", "simulated"), (row["workspaceId"]!.GetValue<string>(), row["registration"]!.GetValue<string>(), row["executionMode"]!.GetValue<string>()));
+        Assert.Equal(row["cvaAfter"]!.GetValue<decimal>() - row["cvaBefore"]!.GetValue<decimal>(), row["cvaIncremental"]!.GetValue<decimal>());
+        Assert.Contains(xva["columns"]!.AsArray(), c => c!["field"]!.GetValue<string>() == "fvaIncremental");
+    }
+
+    [Fact] // Spine 1: a domain nobody registered is refused rather than shown as an empty history
+    public async Task An_unknown_history_domain_is_refused()
+    {
+        var response = await client.PostAsJsonAsync("/api/history/rows", new { domain = "rates", start = 0, count = 10 });
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+    }
 }

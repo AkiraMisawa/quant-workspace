@@ -66,7 +66,7 @@ public sealed class SqliteRunStoreTests : IDisposable
         var store = new SqliteRunStore(path);
         var workflow = XvaModule.Workflow(new TypedDataRef("x", XvaContracts.AcceptedInput, XvaContracts.Version, "0"));
         store.Accept(new RunRecord("run-left", workflow, new JsonObject(), new JsonObject(), RunStatus.Running, [], new Dictionary<string, TypedDataRef>(),
-            null, DateTimeOffset.UtcNow, null, "akira", RunOrigin.Ai, new RunRelations(ConversationId: "c1")), "k", "d");
+            null, DateTimeOffset.UtcNow, null, "akira", RunOrigin.Ai, new RunRelations(ConversationId: "c1"), [XvaContracts.CaseResult]), "k", "d");
 
         var (_, _, restarted) = Process();
         var run = restarted.Find("run-left")!;

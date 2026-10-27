@@ -36,7 +36,7 @@ public sealed class SqliteRunStore : IRunStore, IDataStore
                 parent_run_id TEXT,
                 analysis_group_id TEXT,
                 conversation_id TEXT,
-                output_contracts TEXT NOT NULL,
+                result_contracts TEXT NOT NULL,
                 record_json TEXT NOT NULL CHECK (json_valid(record_json))
             );
             CREATE INDEX IF NOT EXISTS ix_run_owner ON AnalysisRun(owner_id, accepted_at);
@@ -119,11 +119,15 @@ public sealed class SqliteRunStore : IRunStore, IDataStore
         var conditions = new List<string>();
         if (query.Owner is not null) conditions.Add("owner_id = $owner");
         if (query.WorkspaceId is not null) conditions.Add("workspace_id = $workspace");
+        // Stored space-separated with a space at each end, so a contract matches only as a whole word.
+        if (query.ResultContracts is { } contracts)
+            conditions.Add("(" + (contracts.Count == 0 ? "0" : string.Join(" OR ", contracts.Select((_, i) => $"instr(result_contracts, $contract{i}) > 0"))) + ")");
         var where = conditions.Count == 0 ? "" : "WHERE " + string.Join(" AND ", conditions);
         void Bind(SqliteCommand c)
         {
             if (query.Owner is not null) c.Parameters.AddWithValue("$owner", query.Owner);
             if (query.WorkspaceId is not null) c.Parameters.AddWithValue("$workspace", query.WorkspaceId);
+            for (var i = 0; i < (query.ResultContracts?.Count ?? 0); i++) c.Parameters.AddWithValue($"$contract{i}", $" {query.ResultContracts![i]} ");
         }
         int total;
         using (var count = connection.CreateCommand())
@@ -220,10 +224,10 @@ public sealed class SqliteRunStore : IRunStore, IDataStore
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO AnalysisRun (run_id, owner_id, origin, status, accepted_at, completed_at, workspace_id, workspace_revision,
-                parent_run_id, analysis_group_id, conversation_id, output_contracts, record_json)
+                parent_run_id, analysis_group_id, conversation_id, result_contracts, record_json)
             VALUES ($id, $owner, $origin, $status, $accepted, $completed, $workspace, $revision, $parent, $group, $conversation, $contracts, $json)
             ON CONFLICT (run_id) DO UPDATE SET status = excluded.status, completed_at = excluded.completed_at,
-                output_contracts = excluded.output_contracts, record_json = excluded.record_json
+                record_json = excluded.record_json
             """;
         command.Parameters.AddWithValue("$id", run.RunId);
         command.Parameters.AddWithValue("$owner", run.Owner);
@@ -237,7 +241,7 @@ public sealed class SqliteRunStore : IRunStore, IDataStore
         command.Parameters.AddWithValue("$group", (object?)run.Relations.AnalysisGroupId ?? DBNull.Value);
         command.Parameters.AddWithValue("$conversation", (object?)run.Relations.ConversationId ?? DBNull.Value);
         // The result contracts tell a domain's history view which Runs are its own (docs/05 §7).
-        command.Parameters.AddWithValue("$contracts", string.Join(" ", run.Outputs.Values.Select(o => o.ContractId).Distinct().Order(StringComparer.Ordinal)));
+        command.Parameters.AddWithValue("$contracts", $" {string.Join(" ", run.ResultContracts)} ");
         command.Parameters.AddWithValue("$json", JsonSerializer.Serialize(run, Json));
         command.ExecuteNonQuery();
     }

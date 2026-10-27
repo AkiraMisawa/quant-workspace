@@ -22,6 +22,8 @@ public static class Api
 
     public sealed record ViewValidationRequest(ViewDefinition View, IReadOnlyList<string> BoundNames);
 
+    public sealed record HistoryRequest(string? Domain, int Start, int Count);
+
     public static void MapWorkbenchApi(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api");
@@ -52,6 +54,23 @@ public static class Api
                 ActionResult.Refused refused => Rejected(refused.Code, refused.Issues),
                 _ => throw new InvalidOperationException("Unhandled action result."),
             });
+
+        // The Pricing DB. Until roles arrive with sign-in (C30, C31), a user sees their own Runs only.
+        api.MapGet("/history/domains", (HistoryService history) => history.Domains());
+
+        api.MapPost("/history/rows", (HistoryRequest request, HistoryService history, CurrentUser user) =>
+        {
+            if (request.Start < 0 || request.Count is < 1 or > 2000)
+                return Results.Json(new ErrorEnvelope("InvalidRange", "A range starts at 0 or later and holds 1 to 2000 rows.", []), statusCode: 422);
+            try
+            {
+                return Results.Ok(history.Page(user.Id, request.Domain, request.Start, request.Count));
+            }
+            catch (HistoryRefused refused)
+            {
+                return Results.Json(new ErrorEnvelope(refused.Code, refused.Message, []), statusCode: 422);
+            }
+        });
 
         api.MapPost("/definitions/validate-workflow", (WorkflowDefinition workflow, CompositionRegistry registry) =>
             Results.Ok(new CompositionValidator(registry).Validate(workflow).ToList()));

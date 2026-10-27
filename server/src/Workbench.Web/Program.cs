@@ -24,6 +24,7 @@ builder.Services.AddSingleton<CompositionRegistry>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<RunService>();
 builder.Services.AddSingleton<ActionService>();
+builder.Services.AddSingleton<HistoryService>();
 
 // Workspaces: one SQLite file (D04, C35). Each module registers its edit rules and how its sources are re-acquired.
 var database = Path.GetFullPath(builder.Configuration["Workbench:Database"] ?? Path.Combine(builder.Environment.ContentRootPath, "App_Data", "workbench.db"));

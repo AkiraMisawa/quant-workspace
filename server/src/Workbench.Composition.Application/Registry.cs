@@ -18,6 +18,7 @@ public sealed class CompositionRegistryBuilder
     internal readonly Dictionary<(string, string), WorkflowDefinition> Workflows = [];
     internal readonly Dictionary<(string, string), ViewDefinition> Views = [];
     internal readonly Dictionary<string, ActionDefinition> Actions = [];
+    internal readonly Dictionary<string, IHistoryProjection> HistoryProjections = [];
 
     public CompositionRegistryBuilder AddCapability(ICapabilityHandler handler) =>
         Add(Capabilities, (handler.Descriptor.CapabilityId, handler.Descriptor.Version), handler, "capability");
@@ -38,6 +39,9 @@ public sealed class CompositionRegistryBuilder
         return this;
     }
 
+    public CompositionRegistryBuilder AddHistoryProjection(IHistoryProjection projection) =>
+        Add(HistoryProjections, projection.Domain, projection, "history view");
+
     CompositionRegistryBuilder Add<TKey, TValue>(Dictionary<TKey, TValue> into, TKey key, TValue value, string what) where TKey : notnull
     {
         if (!into.TryAdd(key, value)) throw new InvalidOperationException($"The {what} {key} is registered twice.");
@@ -53,6 +57,7 @@ public sealed class CompositionRegistry
     readonly IReadOnlyDictionary<(string, string), WorkflowDefinition> workflows;
     readonly IReadOnlyDictionary<(string, string), ViewDefinition> views;
     readonly IReadOnlyDictionary<string, ActionDefinition> actions;
+    readonly IReadOnlyDictionary<string, IHistoryProjection> historyProjections;
 
     public CompositionRegistry(IEnumerable<IWorkbenchModule> modules)
     {
@@ -63,6 +68,7 @@ public sealed class CompositionRegistry
         workflows = builder.Workflows;
         views = builder.Views;
         actions = builder.Actions;
+        historyProjections = builder.HistoryProjections;
 
         var validator = new CompositionValidator(this);
         var issues = contracts.Values.SelectMany(ContractChecks.SchemaProblems)
@@ -79,6 +85,7 @@ public sealed class CompositionRegistry
     public IEnumerable<WorkflowDefinition> WorkflowDefinitions => workflows.Values;
     public IEnumerable<ViewDefinition> ViewDefinitions => views.Values;
     public IEnumerable<ActionDefinition> ActionDefinitions => actions.Values;
+    public IEnumerable<IHistoryProjection> HistoryProjections => historyProjections.Values.OrderBy(p => p.Domain, StringComparer.Ordinal);
 
     public ICapabilityHandler? FindCapability(string id, string version) => capabilities.GetValueOrDefault((id, version));
     public ContractDefinition? FindContract(string id, string version) => contracts.GetValueOrDefault((id, version));

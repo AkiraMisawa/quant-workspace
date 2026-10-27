@@ -58,7 +58,7 @@ public sealed class RunService
             var runId = $"run-{Guid.CreateVersion7():N}";
             var run = new RunRecord(runId, submission.Workflow, (JsonObject)submission.Context.DeepClone(), (JsonObject)submission.Input.DeepClone(),
                 RunStatus.Running, [], new Dictionary<string, TypedDataRef>(), null, clock.GetUtcNow(), null,
-                submission.Owner, submission.Origin, submission.Relations);
+                submission.Owner, submission.Origin, submission.Relations, ResultContracts(submission.Workflow));
             // Another process may have taken the key since it was looked up: its Run is the answer then.
             if (!history.Accept(run, submission.IdempotencyKey, digest))
                 return Known(submission, digest) ?? throw new InvalidOperationException("An idempotency key was taken but its Run cannot be found.");
@@ -75,6 +75,16 @@ public sealed class RunService
         _ => new SubmissionResult.Rejected("IdempotencyConflict",
             [new("IdempotencyConflict", "/idempotencyKey", "This key was used for a different submission.")]),
     };
+
+    IReadOnlyList<string> ResultContracts(WorkflowDefinition workflow) =>
+    [
+        .. workflow.Outputs.Values.OfType<OutputBinding>()
+            .Select(o => workflow.Steps.Single(s => s.StepId == o.StepId))
+            .SelectMany(s => registry.FindCapability(s.CapabilityId, s.CapabilityVersion)!.Descriptor.OutputPorts)
+            .Select(p => p.ContractId)
+            .Distinct()
+            .Order(StringComparer.Ordinal),
+    ];
 
     /// <summary>The history, newest first.</summary>
     public (IReadOnlyList<RunRecord> Runs, int Total) List(RunQuery query) => history.List(query);

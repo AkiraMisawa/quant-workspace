@@ -138,6 +138,7 @@ public sealed class XvaModule : IWorkbenchModule
     public void Register(CompositionRegistryBuilder builder)
     {
         builder.AddCapability(new FakeXvaPrice());
+        builder.AddHistoryProjection(new XvaHistoryProjection());
         builder.AddContract(new ContractDefinition(XvaContracts.PriceInput, XvaContracts.Version, "XVA price input", new JsonObject
         {
             ["type"] = "object",

@@ -2,8 +2,11 @@ using System.Collections.Concurrent;
 
 namespace Workbench.Composition.Application;
 
-/// <summary>A page of the history, newest first.</summary>
-public sealed record RunQuery(string? Owner, int Start, int Count, string? WorkspaceId = null);
+/// <summary>
+/// A page of the history, newest first. <c>ResultContracts</c>, when given, keeps the Runs whose workflow
+/// declares any of them: how a domain's view finds its own Runs (docs/05 §7).
+/// </summary>
+public sealed record RunQuery(string? Owner, int Start, int Count, string? WorkspaceId = null, IReadOnlyList<string>? ResultContracts = null);
 
 /// <summary>
 /// Where Runs are kept (docs/05). A Run is saved when it is accepted and again when it completes; the
@@ -50,7 +53,8 @@ public sealed class InMemoryRunStore : IRunStore
 
     public (IReadOnlyList<RunRecord> Runs, int Total) List(RunQuery query)
     {
-        var all = runs.Values.Where(r => (query.Owner is null || r.Owner == query.Owner) && (query.WorkspaceId is null || r.Relations.WorkspaceId == query.WorkspaceId))
+        var all = runs.Values.Where(r => (query.Owner is null || r.Owner == query.Owner) && (query.WorkspaceId is null || r.Relations.WorkspaceId == query.WorkspaceId)
+                && (query.ResultContracts is null || r.ResultContracts.Intersect(query.ResultContracts).Any()))
             .OrderByDescending(r => r.AcceptedAt).ThenByDescending(r => r.RunId, StringComparer.Ordinal).ToList();
         return ([.. all.Skip(query.Start).Take(query.Count)], all.Count);
     }

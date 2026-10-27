@@ -39,7 +39,8 @@ public sealed record InvocationRecord(
 
 /// <summary>
 /// One accepted business submission: its pinned workflow, context and input, and what executing them
-/// produced. Nothing in it changes after completion.
+/// produced. Nothing in it changes after completion. <c>ResultContracts</c> are the contracts its workflow
+/// declares for its outputs, known at acceptance, so a domain's history finds its failed Runs too.
 /// </summary>
 public sealed record RunRecord(
     string RunId,
@@ -54,7 +55,8 @@ public sealed record RunRecord(
     DateTimeOffset? CompletedAt,
     string Owner,
     RunOrigin Origin,
-    RunRelations Relations);
+    RunRelations Relations,
+    IReadOnlyList<string> ResultContracts);
 
 /// <summary>
 /// A request to execute a workflow against a context and an input, on behalf of <paramref name="Owner"/>. The
