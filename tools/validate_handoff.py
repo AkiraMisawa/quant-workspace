@@ -154,12 +154,20 @@ def validate_sql():
     db.close()
 
 
+# Installed packages and build output are not the handoff's documents.
+SKIPPED = {"node_modules", "bin", "obj", "dist", "test-results", "playwright-report", ".git"}
+
+
+def documents(pattern):
+    return [f for f in ROOT.rglob(pattern) if not SKIPPED.intersection(f.relative_to(ROOT).parts)]
+
+
 def main():
-    json_files = list(ROOT.rglob("*.json"))
+    json_files = documents("*.json")
     for f in json_files:
         json.loads(f.read_text(encoding="utf-8"))
     check(True, f"Parse {len(json_files)} JSON files")
-    for f in ROOT.rglob("*.md"):
+    for f in documents("*.md"):
         content = f.read_text(encoding="utf-8")
         assert len(re.findall(r"^```", content, re.M)) % 2 == 0, str(f)
         for target in re.findall(r"(?<!!)\[[^\]]*\]\(([^)]+)\)", content):
