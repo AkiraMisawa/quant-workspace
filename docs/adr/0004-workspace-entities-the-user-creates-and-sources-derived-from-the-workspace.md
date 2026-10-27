@@ -1,6 +1,6 @@
 # ADR-0004: Entities the user creates, and sources derived from the workspace's own values
 
-Status: PROPOSED 2026-10-27 (put to the owner the same day), reviewed against ADR-0003 §7 by the XVA thread, for the Rates line pricer (C37 to C42). Extends ADR-0003 §6 and §7; changes
+Status: ACCEPTED 2026-10-27 by the owner, after review against ADR-0003 §7 by the XVA thread; for the Rates line pricer (C37 to C42). Extends ADR-0003 §6 and §7; changes
 nothing XVA does today.
 
 ## Context
