@@ -40,6 +40,11 @@ idempotency keys through the application executor, and a scripted transcript lab
    tool calls; the loop that invokes the tools, records events and decides when a run ends is the platform's. The
    runtime is chosen by configuration (`Agent:Runtime`); an unknown or unavailable one stops startup or fails the run,
    and never falls back to another (CLAUDE.md: never silently fall back from a real provider to a mock).
+   **The agent runs under its own identity, which can do nothing in the workbench (C44).** The Copilot SDK runtime
+   runs under the agent's service account, apart from the quants' service account and its write access; outside the
+   web process, so the two identities never share one. That account reaches the model and nothing else. The runtime
+   proposes tool calls; the loop invokes them in the workbench for the signed-in user (§3), so what the agent can
+   change is what the user may change through a registered command, never what either service account may write.
 6. **Until the Copilot adapter exists, the runtime is a scripted agent, and it says so.** It has no model. Modules
    register the requests it understands (the Rates module: create an IRS line from the terms written in the request,
    start and stop ticking), it fills only the terms the request states, and a refusal's missing terms become its
@@ -58,8 +63,9 @@ idempotency keys through the application executor, and a scripted transcript lab
 
 - A new project `Workbench.Agent` holds the AG-UI events, threads, the loop, the tool gateway, the runtime port and the
   scripted runtime. It knows no domain; the Rates module registers its scripted requests.
-- The Copilot adapter is one more `IAgentRuntime`, configured in the composition root. How it is reached and
-  authenticated is OPEN with the owner.
+- The Copilot adapter is one more `IAgentRuntime`, configured in the composition root, talking to a separate agent
+  process built on the Copilot SDK (C44). How that process authenticates its service account, and where it runs, is
+  OPEN with the owner.
 - docs/11 AI04 (reconnect) and AI06 (no unregistered path) gain an application part; AI01 needs a real runtime.
 
 ## Rejected
