@@ -31,13 +31,17 @@ public sealed record WorkspaceState(
 /// <summary>What re-acquiring did to the overrides (ADR-0003 §7): said to the user after every re-acquisition.</summary>
 public sealed record CarrySummary(int Carried, int Conflicted, int Lost);
 
-/// <summary>A frozen revision: what Price submits. The Run keeps this copy; the workspace may later be deleted.</summary>
+/// <summary>
+/// A frozen revision: what Price submits. The Run keeps this copy; the workspace may later be deleted.
+/// <see cref="State"/> is the immutable state at that revision, from which the module builds its accepted input.
+/// </summary>
 public sealed record WorkspaceFreeze(
     string WorkspaceId,
     long Revision,
     JsonObject Context,
     string SourceVersion,
-    IReadOnlyList<Override> Overrides);
+    IReadOnlyList<Override> Overrides,
+    WorkspaceState State);
 
 /// <summary>A command refused. Nothing changed.</summary>
 public sealed class WorkspaceRefused(string code, string message, IReadOnlyList<EditTarget>? targets = null) : Exception(message)
@@ -228,13 +232,18 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
     /// Freezes the revision for Price. Refused while an entity it would price has an unresolved conflict or an
     /// unacknowledged lost target; entities not priced do not block it.
     /// </summary>
-    public WorkspaceFreeze Freeze(string workspaceId, long expectedRevision, Func<string, bool> priced)
+    public WorkspaceFreeze Freeze(string workspaceId, long expectedRevision, Func<string, bool> priced) =>
+        Freeze(workspaceId, expectedRevision, _ => priced);
+
+    /// <summary>As <see cref="Freeze(string, long, Func{string, bool})"/>, with the priced entities decided from the state being frozen.</summary>
+    public WorkspaceFreeze Freeze(string workspaceId, long expectedRevision, Func<WorkspaceState, Func<string, bool>> pricedIn)
     {
         lock (gate)
         {
             var state = Get(workspaceId);
             if (state.Revision != expectedRevision)
                 throw new WorkspaceRefused("RevisionMoved", $"The workspace is at revision {state.Revision}, not {expectedRevision}.");
+            var priced = pricedIn(state);
             var blocking = state.Conflicts.Keys
                 .Concat(state.Lost.Where(l => !l.Value.Acknowledged).Select(l => l.Key))
                 .Where(t => priced(t.Entity))
@@ -242,7 +251,7 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
             if (blocking.Count > 0)
                 throw new WorkspaceRefused("UnresolvedEdits", "Resolve the conflicts and lost edits on the trades being priced.", blocking);
             return new WorkspaceFreeze(state.WorkspaceId, state.Revision, (JsonObject)state.Context.DeepClone(), state.Source.Version,
-                state.Overrides.Values.OrderBy(o => o.Seq).ToList());
+                state.Overrides.Values.OrderBy(o => o.Seq).ToList(), state);
         }
     }
 
