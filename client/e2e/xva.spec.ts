@@ -4,7 +4,7 @@ import { command, expect, open, settled, test } from './fixtures';
 // Slice 02 (docs/plans/slice-02-xva-workspace.md): the XVA workspace and the Pricing DB, driven by keyboard.
 
 async function newWorkspace(page: Page, registration: string, trades: number): Promise<void> {
-  await command(page, 'New XVA workspace');
+  await command(page, 'new xva');
   const dialog = page.getByRole('dialog', { name: 'New XVA workspace' });
   await expect(dialog.getByRole('combobox', { name: 'Counterparty' })).toBeFocused();
   await page.keyboard.type(registration);
@@ -44,13 +44,13 @@ test('docs/03, ADR-0003: a new trade takes the main CSA, a CSA typed in moves it
   await expect(trade(page, 'DRAFT-1').getByRole('gridcell').nth(CSA + 1)).toHaveText('usd_sofr');
   await expect(page.getByTestId('workspace-summary')).toContainText('1 edit(s)');
 
-  await command(page, 'Price XVA workspace');
+  await command(page, 'price');
   await expect(page.getByTestId('run-status')).toHaveText('succeeded');
   await expect(page.getByLabel('CVA and FVA (simulated)').getByRole('row', { name: /^CVA / })).toBeVisible();
   const runId = await page.locator('[data-testid=run-status] + p').textContent();
   expect(runId).toMatch(/^run-/);
 
-  await command(page, 'Open Pricing DB');
+  await command(page, 'open pricing db');
   await settled(page, 'Pricing DB');
   await expect(page.getByLabel('Pricing DB').getByRole('row', { name: new RegExp(`${runId}`) })).toContainText('pricer');
   await page.getByRole('radiogroup', { name: 'Domain' }).getByText('XVA', { exact: true }).click();

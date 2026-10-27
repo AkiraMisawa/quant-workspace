@@ -36,12 +36,12 @@ function Shell({ notice, clearNotice }: { readonly notice: string | undefined; r
         <Group justify="space-between" wrap="wrap" gap="xs" h="100%">
           <Group gap="sm" wrap="nowrap">
             <Title order={1} size="sm" c="signal" style={{ letterSpacing: '0.08em' }}>QUANT WORKBENCH</Title>
-            <Button size="compact-xs" variant="default" onClick={openPalette} aria-label="Open command palette"
+            <Button size="compact-xs" variant="default" onClick={openPalette} aria-label="Open command line"
               rightSection={<Kbd size="xs">Ctrl K</Kbd>}>Commands</Button>
           </Group>
           <Group gap="xs" wrap="wrap">
             <ContextBar />
-            <Tooltip label="Toggle theme (Ctrl+Alt+T)">
+            <Tooltip label="Toggle theme (toggle theme)">
               <ActionIcon variant="default" size="sm" onClick={toggleColorScheme} aria-label="Toggle theme">
                 {colorScheme === 'dark' ? '☀' : '☾'}
               </ActionIcon>
@@ -72,7 +72,7 @@ function Panels() {
     return (
       <Stack align="center" mt="xl" gap="xs">
         <Text c="dimmed">Nothing open yet.</Text>
-        <Text c="dimmed" size="sm">Press <Kbd>Ctrl</Kbd> + <Kbd>K</Kbd> and run a workflow, start a New XVA workspace or Open Pricing DB.</Text>
+        <Text c="dimmed" size="sm">Press <Kbd>Ctrl</Kbd> + <Kbd>K</Kbd> and type what you want to do: <Kbd>new rates</Kbd>, <Kbd>new xva</Kbd>, <Kbd>open pricing db</Kbd>, or <Kbd>?</Kbd> for every command.</Text>
       </Stack>
     );
 

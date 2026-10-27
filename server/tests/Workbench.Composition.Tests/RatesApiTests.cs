@@ -89,4 +89,31 @@ public class RatesApiTests : IClassFixture<WorkbenchFactory>
         Assert.Equal("simulated", frame["calculationMode"]!.GetValue<string>());
         Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/rates/live/{subscription}")).StatusCode);
     }
+
+    [Fact] // ADR-0006: the command line makes a line from its terms at the revision the page saw, and completes legs from the conventions
+    public async Task A_line_is_created_from_its_terms_at_the_page_revision()
+    {
+        var conventions = (await client.GetFromJsonAsync<JsonArray>("/api/rates/conventions"))!;
+        Assert.Contains(conventions, c => c!["currency"]!.GetValue<string>() == "JPY" && c["index"]!.GetValue<string>() == "TONA");
+
+        var ws = await Ok(await client.PostAsJsonAsync("/api/rates/workspaces", new { valuationDate = "2026-10-27" }));
+        var id = ws["workspaceId"]!.GetValue<string>();
+        var revision = ws["revision"]!.GetValue<long>();
+        var terms = new JsonObject
+        {
+            ["product"] = "irs", ["end"] = "10y", ["direction"] = "pay",
+            ["leg1.currency"] = "JPY", ["leg1.index"] = "TONA", ["leg1.notional"] = 3_000_000_000, ["leg1.paymentFrequency"] = "12m",
+            ["leg2.currency"] = "JPY", ["leg2.index"] = "TONA", ["leg2.notional"] = 3_000_000_000, ["leg2.paymentFrequency"] = "12m",
+            ["leg2.quoteKind"] = "FloatSpreadPercent", ["leg2.quote"] = 0,
+        };
+
+        var stale = await client.PostAsJsonAsync($"/api/rates/workspaces/{id}/lines/terms", new { revision = revision - 1, terms });
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+
+        var added = await Ok(await client.PostAsJsonAsync($"/api/rates/workspaces/{id}/lines/terms", new { revision, terms }));
+        var line = added["line"]!.GetValue<string>();
+        Assert.True(added["workspace"]!["lines"]!.AsArray().Single(l => l!["line"]!.GetValue<string>() == line)!["priceable"]!.GetValue<bool>());
+        var log = host.Services.GetRequiredService<Workbench.Composition.Application.Workspaces.WorkspaceService>().Find(id)!.Log;
+        Assert.Equal(Workbench.Composition.Application.RunOrigin.Pricer, log.Single(e => e.Kind == Workbench.Composition.Application.Workspaces.EditKind.Create).Origin);
+    }
 }

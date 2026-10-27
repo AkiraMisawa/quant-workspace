@@ -80,6 +80,9 @@ public sealed class ConventionRegistry(IEnumerable<ConventionProfile> profiles, 
     readonly Dictionary<string, IBusinessCalendar> calendarsById = calendars.ToDictionary(c => c.Id);
 
     public ConventionProfile? Find(string currency, string index) => byIndex.GetValueOrDefault((currency, index));
+
+    /// <summary>Every confirmed profile, by currency and index: what a line's legs may name.</summary>
+    public IEnumerable<ConventionProfile> Profiles => byIndex.Values.OrderBy(p => p.Currency, StringComparer.Ordinal).ThenBy(p => p.Index, StringComparer.Ordinal);
     public IBusinessCalendar? Calendar(string id) => calendarsById.GetValueOrDefault(id);
 }
 

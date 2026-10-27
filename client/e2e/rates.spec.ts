@@ -6,7 +6,7 @@ import { command, expect, open, settled, test } from './fixtures';
 // market, every figure simulated.
 
 async function newWorkspace(page: Page): Promise<void> {
-  await command(page, 'New Rates workspace');
+  await command(page, 'new rates');
   const dialog = page.getByRole('dialog', { name: 'New Rates workspace' });
   await expect(dialog.getByLabel('Valuation date')).toBeFocused();
   await page.keyboard.press('Enter');
@@ -65,7 +65,7 @@ test('C40, docs/07: a line typed by keyboard ticks live, is captured and priced 
   await settled(page, 'Lines');
   await expect(page.getByTestId('live-toggle')).toHaveText('Stop live');
   await expect(page.getByTestId('live-frame')).toContainText('live');
-  await command(page, 'Price Rates workspace');
+  await command(page, 'price');
   await expect(page.getByTestId('run-status')).toHaveText('succeeded');
   // The Run's view is a grid titled Lines too; only the Run's tab panel is mounted now.
   await expect(page.getByRole('tabpanel').getByLabel('Lines', { exact: true }).getByRole('row', { name: /^L\d+ priced / })).toBeVisible();
@@ -89,4 +89,42 @@ test('C43, C39: a leg\'s second level opens and closes on request, and a line wi
 
   await firstLine(page).getByRole('button', { name: 'Cashflows' }).click();
   await expect(page.getByTestId('cashflows')).toContainText('generates no schedule');
+});
+
+test('ADR-0006: a line is made from the command line, its arguments completed from the configured conventions', async ({ page }) => {
+  await open(page);
+  await newWorkspace(page);
+  const line = page.getByRole('combobox', { name: 'Command' });
+  const options = page.getByRole('listbox');
+
+  // `/` opens the line from outside a text field or grid; the command is found by the start of its words.
+  await page.getByRole('tab', { name: 'Rates 2026-10-27' }).focus();
+  await page.keyboard.press('/');
+  await expect(line).toBeFocused();
+  await page.keyboard.type('ne ir');
+  await expect(options.getByRole('option').first()).toContainText('new irs');
+  await page.keyboard.press('Tab');
+  await expect(line).toHaveValue('new irs ');
+
+  // Each slot offers only what the server says a leg may name; Tab takes the value highlighted.
+  await expect(options.getByRole('option', { name: /^JPY/ })).toBeVisible();
+  await page.keyboard.type('JP');
+  await page.keyboard.press('Tab');
+  await expect(options.getByRole('option').first()).toContainText('TONA');
+  await page.keyboard.press('Tab');
+  await expect(line).toHaveValue('new irs JPY TONA ');
+
+  // Enter with a slot still empty names what is missing and runs nothing.
+  await page.keyboard.type('10y 3bn pay');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('command-problems')).toHaveText('Missing: fixed-frequency, float-frequency.');
+
+  await page.keyboard.type(' 12m 12m spread=0');
+  await expect(page.getByTestId('command-pending')).toContainText('spread=0');
+  await page.keyboard.press('Enter');
+  await expect(line).toBeHidden();
+  await expect(page.getByTestId('workspace-summary')).toContainText('1 line(s)');
+  await expect(cell(page, STATUS)).not.toHaveText(/cannot|not priced/);
+  await expect(cell(page, END)).toHaveText('10y');
+  await expect(cell(page, LEG1_NOTIONAL)).toHaveText('3,000,000,000');
 });

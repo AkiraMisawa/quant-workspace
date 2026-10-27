@@ -17,13 +17,15 @@ export async function open(page: Page): Promise<void> {
   await expect(page.getByText('Nothing open yet.')).toBeVisible();
 }
 
-/** Runs a palette command by typing its title, once the palette holds the keyboard. */
-export async function command(page: Page, title: string): Promise<void> {
+/**
+ * Runs a command from the command line (ADR-0006): its words, then its arguments if it takes any. Enter runs what the
+ * line shows it will run, so the test reads that first.
+ */
+export async function command(page: Page, words: string, args?: string): Promise<void> {
   await page.keyboard.press('ControlOrMeta+K');
-  await expect(page.getByRole('textbox', { name: 'Command' })).toBeFocused();
-  await page.keyboard.type(title);
-  // Enter runs the first action the palette lists, so the test reads which one that is first.
-  await expect(page.locator('.mantine-Spotlight-action').first()).toContainText(title);
+  await expect(page.getByRole('combobox', { name: 'Command' })).toBeFocused();
+  await page.keyboard.type(args === undefined ? words : `${words} ${args}`);
+  await expect(page.getByTestId('command-pending')).toContainText(words);
   await page.keyboard.press('Enter');
 }
 

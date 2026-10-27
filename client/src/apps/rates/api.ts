@@ -14,6 +14,8 @@ export interface RatesApi {
   create(valuationDate: string): Promise<RatesWorkspaceView>;
   view(workspaceId: string): Promise<RatesWorkspaceView>;
   addLine(workspaceId: string, revision: number, product: 'irs' | 'ccs'): Promise<{ readonly line: string; readonly workspace: RatesWorkspaceView }>;
+  createLine(workspaceId: string, revision: number, terms: Readonly<Record<string, unknown>>): Promise<{ readonly line: string; readonly workspace: RatesWorkspaceView }>;
+  conventions(): Promise<readonly { readonly currency: string; readonly index: string; readonly profile: string }[]>;
   removeLine(workspaceId: string, revision: number, line: string): Promise<RatesWorkspaceView>;
   editLine(workspaceId: string, revision: number, line: string, field: string, value: unknown): Promise<RatesWorkspaceView>;
   cashflows(workspaceId: string, line: string): Promise<CashflowsView>;
@@ -33,6 +35,8 @@ export const httpRatesApi: RatesApi = {
   create: (valuationDate) => post('/api/rates/workspaces', { valuationDate }),
   view: (workspaceId) => call(base(workspaceId)),
   addLine: (workspaceId, revision, product) => post(`${base(workspaceId)}/lines`, { revision, product }),
+  createLine: (workspaceId, revision, terms) => post(`${base(workspaceId)}/lines/terms`, { revision, terms }),
+  conventions: () => call('/api/rates/conventions'),
   removeLine: (workspaceId, revision, line) => post(`${base(workspaceId)}/lines/${encodeURIComponent(line)}/remove`, { revision }),
   editLine: (workspaceId, revision, line, field, value) => post(`${base(workspaceId)}/lines/${encodeURIComponent(line)}/edits`, { revision, field, value }),
   cashflows: (workspaceId, line) => call(`${base(workspaceId)}/lines/${encodeURIComponent(line)}/cashflows`),

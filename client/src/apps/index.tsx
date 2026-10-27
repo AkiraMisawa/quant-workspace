@@ -1,7 +1,9 @@
 import { useState, type ReactNode } from 'react';
 import { Button, Group, Modal, NumberInput, Select, Stack, TextInput } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
-import type { Command } from '../platform/commands/commands';
+import type { Command, CommandArgument } from '../platform/commands/commands';
+import { parserOf } from './rates/lines';
+import { parseNumber } from './xva/editing';
 import { useWorkspace, useWorkspaceContext } from '../platform/workspace/WorkspaceProvider';
 import type { Panel, WorkspaceState } from '../platform/workspace/workspaceStore';
 import { PricingDbPanel } from './history/PricingDbPanel';
@@ -13,7 +15,7 @@ import { priceOf } from './xva/commands';
 import { XvaWorkspacePanel } from './xva/XvaWorkspacePanel';
 
 // The fixed applications (docs/01): pages a domain offers beside the composed workflows. Each is reached
-// through commands, so the palette, a shortcut and a button cannot differ.
+// through commands, so the command line and a button cannot differ (ADR-0006).
 
 export const XVA_WORKSPACE = 'xva.workspace';
 export const PRICING_DB = 'history.pricingDb';
@@ -54,32 +56,32 @@ export function AppPanel({ panel }: { readonly panel: Extract<Panel, { kind: 'ap
 
 export function appCommands(state: Pick<WorkspaceState, 'showApp' | 'openAppDialog' | 'panels' | 'activePanelId'>): Command[] {
   const active = state.panels.find((p) => p.id === state.activePanelId);
-  // Looked up when the command runs: the page registers its Price once it has mounted, after this list is made.
+  // Looked up when the command runs: the page registers its commands once it has mounted, after this list is made.
   const xva = active?.kind === 'app' && active.app === XVA_WORKSPACE ? active.id : undefined;
   const rates = active?.kind === 'app' && active.app === RATES_WORKSPACE ? active.id : undefined;
-  const onRates = (name: 'price' | 'live' | 'capture') => () => {
-    const page = ratesCommandsOf(rates);
-    if (page === undefined) throw new Error(`The Rates workspace in panel ${rates ?? '(none)'} registered no commands.`);
-    page[name]();
+  const page = () => {
+    const commands = ratesCommandsOf(rates);
+    if (commands === undefined) throw new Error(`The Rates workspace in panel ${rates ?? '(none)'} registered no commands.`);
+    return commands;
   };
-  const noRates = rates === undefined ? { unavailable: 'No Rates workspace is active.' } : {};
+  const onRates = rates === undefined ? { unavailable: 'Open a Rates workspace first.' } : { target: active!.title };
+  const priceTarget = xva !== undefined || rates !== undefined ? { target: active!.title } : { unavailable: 'Open an XVA or Rates workspace to price it.' };
   return [
     {
       id: 'xva.new',
-      title: 'New XVA workspace',
+      words: 'new xva',
+      title: 'New XVA workspace for a counterparty',
       group: 'XVA',
-      keywords: ['cva', 'fva', 'pricer', 'counterparty'],
-      shortcut: 'mod+alt+N',
       run: () => state.openAppDialog(NEW_XVA),
     },
     {
-      id: 'xva.price',
-      title: 'Price XVA workspace',
-      group: 'XVA',
-      keywords: ['cva', 'fva', 'run'],
-      shortcut: 'mod+alt+P',
-      ...(xva === undefined ? { unavailable: 'No XVA workspace is active.' } : {}),
+      id: 'workspace.price',
+      words: 'price',
+      title: 'Price the workspace as it stands',
+      group: 'Pricing',
+      ...priceTarget,
       run: () => {
+        if (rates !== undefined) { page().price(); return; }
         const price = priceOf(xva);
         if (price === undefined) throw new Error(`The XVA workspace in panel ${xva ?? '(none)'} registered no Price.`);
         price();
@@ -87,24 +89,98 @@ export function appCommands(state: Pick<WorkspaceState, 'showApp' | 'openAppDial
     },
     {
       id: 'rates.new',
-      title: 'New Rates workspace',
+      words: 'new rates',
+      title: 'New Rates workspace (IRS and CCS lines)',
       group: 'Rates',
-      keywords: ['irs', 'ccs', 'swap', 'line pricer', 'pv', 'par'],
-      shortcut: 'mod+alt+R',
       run: () => state.openAppDialog(NEW_RATES),
     },
-    { id: 'rates.price', title: 'Price Rates workspace', group: 'Rates', keywords: ['pv', 'par', 'run'], ...noRates, run: onRates('price') },
-    { id: 'rates.live', title: 'Start or stop Rates live', group: 'Rates', keywords: ['tick', 'live', 'stream'], ...noRates, run: onRates('live') },
-    { id: 'rates.capture', title: 'Capture Rates live frame', group: 'Rates', keywords: ['save', 'snapshot', 'frame'], ...noRates, run: onRates('capture') },
+    {
+      id: 'rates.line.irs',
+      words: 'new irs',
+      title: 'Add an interest rate swap from its terms',
+      group: 'Rates',
+      ...onRates,
+      args: irsArguments(() => ratesCommandsOf(rates)?.conventions() ?? []),
+      run: (a) => page().createLine(irsTerms(a)),
+    },
+    {
+      id: 'rates.line.add',
+      words: 'add line',
+      title: 'Add an empty line to fill in the grid',
+      group: 'Rates',
+      ...onRates,
+      args: [{ name: 'product', required: true, complete: () => [{ value: 'irs', detail: 'interest rate swap' }, { value: 'ccs', detail: 'cross-currency swap' }],
+        check: (v) => (v === 'irs' || v === 'ccs' ? undefined : 'irs or ccs') }],
+      run: (a) => page().addLine(a.product as 'irs' | 'ccs'),
+    },
+    { id: 'rates.live.start', words: 'live start', title: 'Start ticking the workspace', group: 'Rates', ...onRates, run: () => page().startLive() },
+    { id: 'rates.live.stop', words: 'live stop', title: 'Stop ticking the workspace, for everyone watching', group: 'Rates', ...onRates, run: () => page().stopLive() },
+    { id: 'rates.capture', words: 'capture', title: 'Save the live frame on screen as a Run', group: 'Rates', ...onRates, run: () => page().capture() },
     {
       id: 'history.open',
-      title: 'Open Pricing DB',
+      words: 'open pricing db',
+      title: 'Open the Pricing DB of past Runs',
       group: 'History',
-      keywords: ['runs', 'history', 'pricing'],
-      shortcut: 'mod+alt+H',
       run: () => state.showApp(PRICING_DB, 'Pricing DB', {}),
     },
   ];
+}
+
+const TENORS = ['1y', '2y', '3y', '5y', '7y', '10y', '15y', '20y', '30y'];
+const FREQUENCIES = [{ value: '1m' }, { value: '3m' }, { value: '6m' }, { value: '12m' }];
+
+/** A notional as typed on the line: a number, or one with k, m or bn after it (`3bn`, `500m`). */
+export function parseNotional(text: string): number | undefined {
+  const m = /^(.+?)(k|m|bn)?$/i.exec(text.trim());
+  if (m === null) return undefined;
+  const n = parseNumber(m[1]!);
+  if (n === undefined || n <= 0) return undefined;
+  const scale = { k: 1e3, m: 1e6, bn: 1e9 }[(m[2] ?? '').toLowerCase() as 'k' | 'm' | 'bn'] ?? 1;
+  return n * scale;
+}
+
+const parsed = (field: string) => (value: string): string | undefined => {
+  const result = parserOf(field)!(value);
+  return result.ok ? undefined : result.message;
+};
+
+/**
+ * `new irs`: the basic terms of an IRS (C40), one leg fixed and one floating on the same currency, index and
+ * notional. A quote left out is the leg solved at par; one of rate= or spread= is needed (a line with both legs at
+ * par is refused, by the server, with its reason).
+ */
+function irsArguments(conventions: () => readonly { readonly currency: string; readonly index: string }[]): CommandArgument[] {
+  return [
+    { name: 'currency', required: true, complete: () => [...new Set(conventions().map((c) => c.currency))].map((value) => ({ value })) },
+    { name: 'index', required: true, complete: (g) => conventions().filter((c) => g.currency === undefined || c.currency === g.currency.toUpperCase()).map((c) => ({ value: c.index, detail: c.currency })) },
+    { name: 'end', required: true, hint: 'a tenor such as 10y, or a date', complete: () => TENORS.map((value) => ({ value })), check: parsed('end') },
+    { name: 'notional', required: true, hint: 'such as 1000000000, 3bn or 500m', check: (v) => (parseNotional(v) === undefined ? 'a positive number, with k, m or bn if you like' : undefined) },
+    { name: 'direction', required: true, complete: () => [{ value: 'pay', detail: 'pay fixed' }, { value: 'receive', detail: 'receive fixed' }], check: parsed('direction') },
+    { name: 'fixed-frequency', required: true, complete: () => FREQUENCIES, check: parsed('leg1.paymentFrequency') },
+    { name: 'float-frequency', required: true, complete: () => FREQUENCIES, check: parsed('leg2.paymentFrequency') },
+    { name: 'rate', required: false, hint: 'the fixed rate in %; left out, it is solved at par', check: parsed('leg1.quote') },
+    { name: 'spread', required: false, hint: 'the floating spread in %; left out, it is solved at par', check: parsed('leg2.quote') },
+  ];
+}
+
+function irsTerms(a: Readonly<Record<string, string>>): Record<string, unknown> {
+  const value = (field: string, text: string) => {
+    const result = parserOf(field)!(text);
+    if (!result.ok) throw new Error(`${field} was checked on the line and is refused now: ${result.message}`);
+    return result.value;
+  };
+  const notional = parseNotional(a.notional!);
+  if (notional === undefined) throw new Error('The notional was checked on the line and is refused now.');
+  const terms: Record<string, unknown> = { product: 'irs', end: value('end', a.end!), direction: value('direction', a.direction!) };
+  for (const [leg, frequency] of [[1, a['fixed-frequency']!], [2, a['float-frequency']!]] as const) {
+    terms[`leg${leg}.currency`] = a.currency!.toUpperCase();
+    terms[`leg${leg}.index`] = a.index!.toUpperCase();
+    terms[`leg${leg}.notional`] = notional;
+    terms[`leg${leg}.paymentFrequency`] = value(`leg${leg}.paymentFrequency`, frequency);
+  }
+  if (a.rate !== undefined) { terms['leg1.quoteKind'] = 'FixedRatePercent'; terms['leg1.quote'] = value('leg1.quote', a.rate); }
+  if (a.spread !== undefined) { terms['leg2.quoteKind'] = 'FloatSpreadPercent'; terms['leg2.quote'] = value('leg2.quote', a.spread); }
+  return terms;
 }
 
 /** The dialogs apps open. Enter submits; Escape closes. */

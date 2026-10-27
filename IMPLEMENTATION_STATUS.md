@@ -15,13 +15,13 @@ Plan: [docs/plans/slice-01-generic-workbench.md](docs/plans/slice-01-generic-wor
   - Runs with idempotency keys, retained typed data references, and registered row actions (`openView`, `runWorkflow`).
   - HTTP API: catalog, runs, data read, action invoke, and definition validation.
 - **Client** (`client/`):
-  - A command palette (Ctrl/⌘+K). Its commands come from the catalog, so a registered workflow appears without a client change.
+  - The command line (Ctrl/⌘+K, or `/` outside a text field or grid; ADR-0006). Commands are English words (`run station summary`, `set region South`); those from the catalog appear without a client change.
   - A context bar that keeps the last valid context in force.
   - A run dialog generated from the input contract.
   - Panels per Run or per opened view.
   - Declarative views rendered through ExGrid, with row actions in an ExGrid Action Column.
   - Light and dark themes.
-  - Keyboard shortcuts for focus grid, next/previous panel, close panel and theme.
+  - Shell keys only: focus grid, edit context, next/previous panel, close panel (ADR-0006 §8). The theme is the `toggle theme` command.
 - **Sample module**: four synthetic capabilities (stations, readings, summary). They are non-financial on purpose, to show that the kernel knows nothing of XVA.
 
 ### Verification performed
@@ -75,7 +75,7 @@ Plan: [docs/plans/slice-02-xva-workspace.md](docs/plans/slice-02-xva-workspace.m
 - **Synthetic XVA module** (`Workbench.Samples.Xva`): three registrations (two share code ABC under different legal entities), agreements with CSAs and one uncollateralised (`nocsa_MA-003`), up to 100,000 generated existing trades per counterparty (matured ones are absent at a later date, and the last fixing moves with the date), three draft trades that belong to no counterparty, an empty CVA recovery on LE-01. The rules: a new trade takes the main CSA, a curve follows its CSA (including a CSA curve edit) unless the user set it, an uncollateralised trade starts on the profile curve, an ineligible CSA is an issue on the row and Price refuses it. A simulated CVA/FVA provider prices Before and After independently and falls back to the CDS recovery when the CVA recovery is empty.
 - **HTTP**: `/api/xva/...` creates a workspace, pages effective rows (sorted on the server, Blank last as ExGrid's ADR-0023), edits, resolves held edits, moves the value date, previews and confirms a counterparty change, prices and deletes. `/api/history/...` serves the Pricing DB.
 - **Pricing DB**: every Run newest first; a module registers a history projection; the XVA view adds value date, registration, trade counts, CVA and FVA Before, After and incremental. An unknown domain is refused.
-- **Client**: the XVA workspace page (ExGrid over a fetching source with a Row Key; user-set, held and invalid cells painted as Cell States with their reasons; a counterparty change that shows what it drops by edit kind and asks first; Price as a button and the `Price XVA workspace` command) and the Pricing DB page (one domain at a time, `Open` opens a Run). `New XVA workspace` (Ctrl+Alt+N), `Open Pricing DB` (Ctrl+Alt+H) and `Price XVA workspace` (Ctrl+Alt+P) are palette commands.
+- **Client**: the XVA workspace page (ExGrid over a fetching source with a Row Key; user-set, held and invalid cells painted as Cell States with their reasons; a counterparty change that shows what it drops by edit kind and asks first; Price as a button and the `Price XVA workspace` command) and the Pricing DB page (one domain at a time, `Open` opens a Run). `new xva`, `open pricing db` and `price` are commands (their chords were removed by ADR-0006).
 
 ### Verification performed
 
@@ -137,7 +137,7 @@ Plan: [docs/plans/slice-03-rates-line-pricer.md](docs/plans/slice-03-rates-line-
 - **Commands (ADR-0005, accepted 2026-10-27)**: the kernel's `EditWorkspace` and `Subscribe` effects mark a capability as a command, invoked through `CommandService` for a `Caller` the server sets (user and origin), outside Runs, with an idempotency key (held in memory); the validator refuses a command as a workflow step. Edit log entries record their origin (a nullable `origin` column, added to an older log on open). The Rates commands are `rates.line.create` (one line from the grid's own terms, in a workspace of the caller's or a new one at the valuation date given; every missing term refused by name, any reason the line could not be priced refused before anything is written), `rates.live.start` (starts or joins the workspace's subscription) and `rates.live.stop`; the live status says whether the page or the AI started and stopped it. They are reached at `POST /api/agent/commands/{capability}/{version}`, the route the agent's tool calls take, with origin `ai`; no agent runtime calls it yet.
 - **HTTP**: `/api/rates/market`, `/api/rates/workspaces/...` (create, view, add, edit, remove a line, cashflows and cashflow edits, resolutions, valuation date, price, start live, delete), `/api/rates/live/{id}/frames|capture`.
 - **Pricing DB**: the Rates view lists one row per Run: valuation date, price or capture, snapshot, lines priced, failed and not priced, execution mode.
-- **Client**: the Rates page (`New Rates workspace`, Ctrl+Alt+R). One ExGrid row per line, keyed by line, with Header Groups over Result, Trade, Leg 1, Leg 2 and Terms; the line and its actions (Cashflows, Remove) are pinned. Cells the user set, held edits, lines that cannot be priced and figures of an older revision are painted as Cell States with their reasons. Each leg's second level (C43) opens and closes from a button beside the grid, and the group's caption says which. Cashflows opens a second ExGrid over the line's periods, whose dates, notional and rate are editable, with its notional exchanges below. Start live and Stop live, Capture, and Price (against the snapshot shown) are buttons and the palette commands `Price Rates workspace`, `Start or stop Rates live` and `Capture Rates live frame`. The edit queue the XVA page used is now generic and shared.
+- **Client**: the Rates page (`new rates`). One ExGrid row per line, keyed by line, with Header Groups over Result, Trade, Leg 1, Leg 2 and Terms; the line and its actions (Cashflows, Remove) are pinned. Cells the user set, held edits, lines that cannot be priced and figures of an older revision are painted as Cell States with their reasons. Each leg's second level (C43) opens and closes from a button beside the grid, and the group's caption says which. Cashflows opens a second ExGrid over the line's periods, whose dates, notional and rate are editable, with its notional exchanges below. Start live and Stop live, Capture, and Price (against the snapshot shown) are buttons and the commands `price`, `live start`, `live stop` and `capture`. The edit queue the XVA page used is now generic and shared.
 - **Configuration**: convention profiles and the synthetic market are configuration (`Rates` section). None is configured by default. `appsettings.Development.json` carries the convention table proposed on 2026-10-27, still unconfirmed, on a weekends-only calendar: its profile version says `unconfirmed` and every row names its profiles.
 
 ### Verification performed
@@ -173,6 +173,31 @@ The provider and the market are simulated. Real holiday calendars, the confirmed
 - Per-line risk (the deltas) is in the Run's Risk grid only; the line grid shows PV and the solved quote.
 - A command's idempotency keys live for the process: a retry after a restart acts again.
 - A line the AI creates holds its terms as the line's own values, so the page does not mark them as the user's edits; the log says they came from the AI.
+
+## The command line (ADR-0006, accepted 2026-10-27)
+
+### What runs
+
+- One command line, opened with Ctrl+K anywhere and with `/` where `/` would not be typed (not in a text field, a grid, or the AI chat, whose slash commands are its own). Commands are English words for what they do; typing shows the matching commands, best first: words typed in full, words that start with the query, words whose starts follow the query in order (`op pr` → `open pricing db`), then words or titles that contain it. Among equal matches what the user ran most and lately comes first, so a few letters find it; `?` lists what can run now.
+- Each command shows what it acts on (the active panel) and why it cannot run if it cannot. A chosen command shows its arguments as slots: required ones in order, optional ones as `name=value`. The slot being typed lists its valid values; Tab takes one, Enter runs, and Enter with a slot missing names it and runs nothing.
+- `new irs <currency> <index> <end> <notional> <direction> <fixed-frequency> <float-frequency> [rate=] [spread=]` makes a line in the active Rates workspace in one edit, at the revision the page saw (`POST /api/rates/workspaces/{id}/lines/terms`); currency and index complete from the configured conventions (`GET /api/rates/conventions`), the end, direction and frequencies from what the grid accepts, and a notional may be written `3bn` or `500m`. `add line <irs|ccs>`, `price` (XVA or Rates, by the active panel), `live start`, `live stop`, `capture`, `new xva`, `new rates`, `open pricing db`, `run <workflow>`, `show <view>`, `set <context field> <value>`, `toggle theme`.
+- `ai <request>` is a command and the last hint when nothing matches; no AI runtime is connected, so it says so and sends nothing.
+- Domain chords (New XVA, Price XVA, New Rates, Pricing DB, theme) are gone.
+
+### Verification performed
+
+| Suite | Result |
+|---|---|
+| `npm test` (Vitest) | 36 passed (ranking, slot reading, completion, missing arguments, the AI's rest-of-line) |
+| `dotnet test server/Workbench.slnx` | 131 passed (the terms endpoint at the page's revision, logged as the page's) |
+| `npx playwright test` (Chromium, headless, Linux) | 10 passed; the new command-line test and the two rewritten ones with `--repeat-each=3` (9 passed) |
+
+### Known limits
+
+- Frequency ranking is kept in the browser until the user settings store arrives with sign-in (C30).
+- `new ccs` with terms is not there yet: `add line ccs` adds an empty line to fill in the grid.
+- New XVA and New Rates still open their dialogs rather than taking their arguments on the line.
+- The AI pane does not exist; `ai` sends nothing.
 
 ## Next
 

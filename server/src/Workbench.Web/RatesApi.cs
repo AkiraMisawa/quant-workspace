@@ -12,6 +12,8 @@ public static class RatesApi
 {
     public sealed record CreateRequest(DateOnly ValuationDate);
     public sealed record AddLineRequest(long Revision, RatesProduct Product);
+    public sealed record LineTermsRequest(long Revision, JsonObject Terms);
+    public sealed record ConventionView(string Currency, string Index, string Profile);
     public sealed record AddedLine(string Line, RatesWorkspaceView Workspace);
     public sealed record RevisionRequest(long Revision);
     public sealed record LineEditRequest(long Revision, string Field, JsonNode? Value);
@@ -38,6 +40,10 @@ public static class RatesApi
                 m.Fx))
             : Results.Json(new Api.ErrorEnvelope("NoMarket", "No market snapshot has been published yet.", [], Retryable: true), statusCode: 503));
 
+        // What a leg may name: the confirmed profiles, for the command line's completions (ADR-0006).
+        api.MapGet("/conventions", (ConventionRegistry conventions) =>
+            conventions.Profiles.Select(p => new ConventionView(p.Currency, p.Index, $"{p.Id}@{p.Version}")));
+
         var ws = api.MapGroup("/workspaces");
 
         ws.MapGet("/", (CurrentUser user, RatesWorkspaces service) =>
@@ -50,6 +56,12 @@ public static class RatesApi
         }));
 
         ws.MapGet("/{id}", (string id, CurrentUser user, RatesWorkspaces service) => Guard(() => Results.Ok(service.View(id, user.Id))));
+
+        ws.MapPost("/{id}/lines/terms", (string id, LineTermsRequest request, CurrentUser user, RatesWorkspaces service) => Guard(() =>
+        {
+            var (_, line) = service.CreateLine(id, user.Id, request.Terms, RunOrigin.Pricer, request.Revision);
+            return Results.Ok(new AddedLine(line, service.View(id, user.Id)));
+        }));
 
         ws.MapPost("/{id}/lines", (string id, AddLineRequest request, CurrentUser user, RatesWorkspaces service) => Guard(() =>
         {
@@ -146,6 +158,11 @@ public static class RatesApi
         catch (KeyNotFoundException missing)
         {
             return Results.Json(new Api.ErrorEnvelope("UnknownSubscription", missing.Message, []), statusCode: 404);
+        }
+        catch (LineTermsRefused refused)
+        {
+            return Results.Json(new Api.ErrorEnvelope("InvalidTerms", refused.Message,
+                [.. refused.Issues.Select(i => new CompositionIssue("InvalidTerms", "/terms", i))]), statusCode: 422);
         }
         catch (WorkspaceRefused refused)
         {

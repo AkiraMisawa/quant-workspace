@@ -144,12 +144,14 @@ public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore stor
     /// every reason, before anything is written. Nothing the caller did not give is filled in: the product decides only
     /// which legs float, as a line added on the page does, and an empty quote is the leg solved at par (C40).
     /// </summary>
-    public (WorkspaceState State, string Line) CreateLine(string workspaceId, string user, JsonObject terms, RunOrigin origin)
+    public (WorkspaceState State, string Line) CreateLine(string workspaceId, string user, JsonObject terms, RunOrigin origin, long? expectedRevision = null)
     {
         var state = Owned(workspaceId, user);
-        var line = $"L{state.Revision + 1}";
+        // The page names the revision it saw, as every page edit does; a command acts on the current one.
+        var revision = expectedRevision ?? state.Revision;
+        var line = $"L{revision + 1}";
         var fields = LineFrom(terms, RatesEditRules.ValuationDate(state));
-        return (Reported(workspaceId, workspaces.Create(workspaceId, state.Revision, user, RatesEditRules.LinesScope, line, fields, origin)), line);
+        return (Reported(workspaceId, workspaces.Create(workspaceId, revision, user, RatesEditRules.LinesScope, line, fields, origin)), line);
     }
 
     /// <summary>A line's fields from its terms, refused with every reason it could not be priced at the valuation date.</summary>
