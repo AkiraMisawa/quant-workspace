@@ -9,6 +9,7 @@ import { viewsFor } from '../platform/views/binding';
 import { CONTEXT_CONTRACT, useWorkspace, useWorkspaceContext } from '../platform/workspace/WorkspaceProvider';
 import { keyOf, type Panel, type WorkspaceState } from '../platform/workspace/workspaceStore';
 import { focusGrid } from './focus';
+import { appCommands } from '../apps';
 
 /**
  * Builds every command the workbench offers right now. Workflows, views and context values come from
@@ -16,7 +17,7 @@ import { focusGrid } from './focus';
  */
 export function buildCommands(args: {
   readonly catalog: Catalog;
-  readonly state: Pick<WorkspaceState, 'panels' | 'activePanelId' | 'context' | 'openRunDialog' | 'setPanelView' | 'closePanel' | 'cycle' | 'requestContext'>;
+  readonly state: Pick<WorkspaceState, 'panels' | 'activePanelId' | 'context' | 'openRunDialog' | 'setPanelView' | 'closePanel' | 'cycle' | 'requestContext' | 'showApp' | 'openAppDialog'>;
   readonly activeRun: RunRecord | undefined;
   readonly toggleTheme: () => void;
   readonly notify: (message: string) => void;
@@ -101,6 +102,7 @@ export function buildCommands(args: {
       shortcut: 'mod+alt+T',
       run: args.toggleTheme,
     },
+    ...appCommands(state),
   );
   assertDistinct(commands);
   return commands;

@@ -29,6 +29,9 @@ public interface IHistoryProjection
 /// <summary>A domain the history can be viewed by.</summary>
 public sealed record HistoryDomain(string Domain, string Title, IReadOnlyList<DatasetColumn> Columns);
 
+/// <summary>What the Pricing DB offers: its own columns, and the domains it can be viewed by.</summary>
+public sealed record HistoryCatalog(IReadOnlyList<DatasetColumn> Columns, IReadOnlyList<HistoryDomain> Domains);
+
 /// <summary>A page of history rows, in ExGrid's fetching-source shape, with the columns in force.</summary>
 public sealed record HistoryPage(IReadOnlyList<DatasetColumn> Columns, IReadOnlyList<JsonObject> Rows, int Start, int TotalCount, string OrderToken);
 
@@ -38,13 +41,18 @@ public sealed record HistoryPage(IReadOnlyList<DatasetColumn> Columns, IReadOnly
 /// </summary>
 public sealed class HistoryService(CompositionRegistry registry, RunService runs, IDataStore data)
 {
-    /// <summary>The history's own columns, shown under every domain.</summary>
-    public static readonly IReadOnlyList<DatasetColumn> Columns =
+    /// <summary>The history's own columns that lead every view: which Run, when, how it ended and what started it.</summary>
+    public static readonly IReadOnlyList<DatasetColumn> Lead =
     [
         new("runId", DatasetColumnType.String, false),
         new("acceptedAt", DatasetColumnType.String, false),
         new("status", DatasetColumnType.String, false),
         new("origin", DatasetColumnType.String, false),
+    ];
+
+    /// <summary>The history's own columns after a domain's figures: who, and the Run's explicit links.</summary>
+    public static readonly IReadOnlyList<DatasetColumn> Tail =
+    [
         new("owner", DatasetColumnType.String, false),
         new("workspaceId", DatasetColumnType.String, true),
         new("workspaceRevision", DatasetColumnType.Integer, true),
@@ -53,8 +61,13 @@ public sealed class HistoryService(CompositionRegistry registry, RunService runs
         new("conversationId", DatasetColumnType.String, true),
     ];
 
-    public IReadOnlyList<HistoryDomain> Domains() =>
-        [.. registry.HistoryProjections.Select(p => new HistoryDomain(p.Domain, p.Title, [.. Columns, .. p.Columns]))];
+    /// <summary>The history's own columns, shown under every domain.</summary>
+    public static IReadOnlyList<DatasetColumn> Columns { get; } = [.. Lead, .. Tail];
+
+    static IReadOnlyList<DatasetColumn> With(IHistoryProjection p) => [.. Lead, .. p.Columns, .. Tail];
+
+    public HistoryCatalog Catalog() =>
+        new(Columns, [.. registry.HistoryProjections.Select(p => new HistoryDomain(p.Domain, p.Title, With(p)))]);
 
     /// <param name="owner">Whose Runs; null for every owner (a developer's or an administrator's view, C31).</param>
     /// <param name="domain">The active domain, or null for every Run with the history's columns only.</param>
@@ -89,7 +102,7 @@ public sealed class HistoryService(CompositionRegistry registry, RunService runs
         // Newest first: the order moves when a Run is added, which the total and the newest Run name together.
         var newest = start == 0 && page.Count > 0 ? page[0] : runs.List(new RunQuery(owner, 0, 1, ResultContracts: projection?.ResultContracts)).Runs.FirstOrDefault();
         var token = $"{total}/{newest?.RunId}";
-        return new(projection is null ? Columns : [.. Columns, .. projection.Columns], rows, start, total, token);
+        return new(projection is null ? Columns : With(projection), rows, start, total, token);
     }
 }
 

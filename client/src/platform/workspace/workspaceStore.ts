@@ -7,7 +7,9 @@ import { validate, type FieldIssue } from '../forms';
 
 export type Panel =
   | { readonly id: string; readonly kind: 'run'; readonly title: string; readonly runId: string; readonly viewKey: string | undefined }
-  | { readonly id: string; readonly kind: 'data'; readonly title: string; readonly view: ViewDefinition };
+  | { readonly id: string; readonly kind: 'data'; readonly title: string; readonly view: ViewDefinition }
+  /** A fixed application page: an app registered in `src/apps` draws it from its parameters. */
+  | { readonly id: string; readonly kind: 'app'; readonly title: string; readonly app: string; readonly params: Readonly<Record<string, string>> };
 
 export type PanelDraft = Panel extends infer P ? (P extends Panel ? Omit<P, 'id'> : never) : never;
 
@@ -25,6 +27,8 @@ export interface WorkspaceState {
   readonly activePanelId: string | undefined;
   /** The workflow whose input form is open, by `definitionId@version`. */
   readonly runDialog: string | undefined;
+  /** The app dialog that is open, by the name its app registered. */
+  readonly appDialog: string | undefined;
   requestContext(contract: ContractDefinition, changes: Readonly<Record<string, unknown>>): void;
   openPanel(panel: PanelDraft): string;
   setPanelView(panelId: string, viewKey: string): void;
@@ -32,6 +36,9 @@ export interface WorkspaceState {
   activate(panelId: string): void;
   cycle(step: 1 | -1): void;
   openRunDialog(workflowKey: string | undefined): void;
+  openAppDialog(dialog: string | undefined): void;
+  /** Activates the app panel with these parameters if one is open, else opens it. */
+  showApp(app: string, title: string, params: Readonly<Record<string, string>>): string;
 }
 
 export type WorkspaceStore = ReturnType<typeof createWorkspaceStore>;
@@ -44,6 +51,7 @@ export function createWorkspaceStore(initialContext: Readonly<Record<string, unk
     panels: [],
     activePanelId: undefined,
     runDialog: undefined,
+    appDialog: undefined,
 
     requestContext(contextContract, changes) {
       const requested = { ...get().context.requested, ...changes };
@@ -86,6 +94,20 @@ export function createWorkspaceStore(initialContext: Readonly<Record<string, unk
 
     openRunDialog(workflowKey) {
       set({ runDialog: workflowKey });
+    },
+
+    openAppDialog(dialog) {
+      set({ appDialog: dialog });
+    },
+
+    showApp(app, title, params) {
+      const same = (p: Panel) => p.kind === 'app' && p.app === app && JSON.stringify(p.params) === JSON.stringify(params);
+      const open = get().panels.find(same);
+      if (open !== undefined) {
+        set({ activePanelId: open.id });
+        return open.id;
+      }
+      return get().openPanel({ kind: 'app', title, app, params });
     },
   }));
 }

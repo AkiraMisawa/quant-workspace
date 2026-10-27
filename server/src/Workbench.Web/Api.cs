@@ -56,7 +56,7 @@ public static class Api
             });
 
         // The Pricing DB. Until roles arrive with sign-in (C30, C31), a user sees their own Runs only.
-        api.MapGet("/history/domains", (HistoryService history) => history.Domains());
+        api.MapGet("/history/catalog", (HistoryService history) => history.Catalog());
 
         api.MapPost("/history/rows", (HistoryRequest request, HistoryService history, CurrentUser user) =>
         {

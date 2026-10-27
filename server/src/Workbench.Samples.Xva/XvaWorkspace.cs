@@ -24,7 +24,11 @@ public sealed record EffectiveTrade(
     bool Before,
     bool After,
     IReadOnlyList<string> Issues,
-    IReadOnlyList<string> Held);
+    IReadOnlyList<string> Held,
+    IReadOnlyList<string> Overridden);
+
+/// <summary>A CSA of the agreement with its effective discount curve.</summary>
+public sealed record EffectiveCsa(string CsaId, string Currency, string Curve, Ownership CurveOwner);
 
 /// <summary>The counterparty's credit inputs. An empty CVA recovery stays empty; analytics uses the CDS recovery.</summary>
 public sealed record EffectiveCredit(decimal? CvaRecovery, Ownership CvaRecoveryOwner, decimal CdsRecovery);
@@ -86,6 +90,15 @@ public static class XvaMaterialiser
         return entities.Contains;
     }
 
+    public static IReadOnlyList<EffectiveCsa> Csas(WorkspaceState state)
+    {
+        var source = (XvaSourceVersion)state.Source;
+        return [.. source.Agreement.Csas.Select(c =>
+            state.Overrides.Values.SingleOrDefault(o => o.Target.Entity == Entity.Of(Entity.Csa, c.CsaId) && o.Target.Field == "curve") is { } o
+                ? new EffectiveCsa(c.CsaId, c.Currency, o.Value!.GetValue<string>(), Ownership.User)
+                : new EffectiveCsa(c.CsaId, c.Currency, c.Curve, Ownership.Source))];
+    }
+
     public static EffectiveCredit Credit(WorkspaceState state)
     {
         var source = (XvaSourceVersion)state.Source;
@@ -132,6 +145,7 @@ public static class XvaMaterialiser
             Has("before", out var b) ? b!.GetValue<bool>() : !t.IsNew,
             Has("after", out var a) ? a!.GetValue<bool>() : true,
             issues,
-            [.. held[entity]]);
+            [.. held[entity]],
+            [.. EditableFields.Where(f => overrides.ContainsKey((entity, f)))]);
     }
 }

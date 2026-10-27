@@ -20,6 +20,7 @@ public sealed record XvaWorkspaceView(
     string SourceVersion,
     Registration Registration,
     Agreement Agreement,
+    IReadOnlyList<EffectiveCsa> Csas,
     EffectiveCredit Credit,
     int Trades,
     int Overrides,
@@ -59,7 +60,7 @@ public sealed class XvaWorkspaces(WorkspaceService workspaces, IDataStore store,
             .Select(r => new RunLink(r.RunId, r.Relations.WorkspaceRevision ?? throw new InvalidOperationException($"Run {r.RunId} names a workspace but no revision.")))
             .ToList();
         return new(state.WorkspaceId, state.Revision, state.Context, source.Version, source.Registration, source.Agreement,
-            XvaMaterialiser.Credit(state), Rows(state).Count, state.Overrides.Count,
+            XvaMaterialiser.Csas(state), XvaMaterialiser.Credit(state), Rows(state).Count, state.Overrides.Count,
             [.. state.Conflicts.Values.OrderBy(c => c.Override.Seq).Select(c => new HeldEdit(c.Override.Target.Scope, c.Override.Target.Entity, c.Override.Target.Field, c.Override.Value, c.Source, false))],
             [.. state.Lost.Values.OrderBy(l => l.Override.Seq).Select(l => new HeldEdit(l.Override.Target.Scope, l.Override.Target.Entity, l.Override.Target.Field, l.Override.Value, null, l.Acknowledged))],
             links);

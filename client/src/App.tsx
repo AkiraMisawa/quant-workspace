@@ -8,6 +8,7 @@ import type { Panel } from './platform/workspace/workspaceStore';
 import { CommandPalette, openPalette } from './shell/CommandPalette';
 import { ContextBar } from './shell/ContextBar';
 import { RunDialog } from './shell/RunDialog';
+import { AppDialogs, AppPanel } from './apps';
 import { RunPanel } from './shell/RunPanel';
 import { registerGridFocus } from './shell/focus';
 import { useMantineColorScheme } from '@mantine/core';
@@ -56,6 +57,7 @@ function Shell({ notice, clearNotice }: { readonly notice: string | undefined; r
       </AppShell.Main>
       <CommandPalette />
       <RunDialog />
+      <AppDialogs />
     </AppShell>
   );
 }
@@ -70,7 +72,7 @@ function Panels() {
     return (
       <Stack align="center" mt="xl" gap="xs">
         <Text c="dimmed">Nothing open yet.</Text>
-        <Text c="dimmed" size="sm">Press <Kbd>Ctrl</Kbd> + <Kbd>K</Kbd> and run a workflow.</Text>
+        <Text c="dimmed" size="sm">Press <Kbd>Ctrl</Kbd> + <Kbd>K</Kbd> and run a workflow, start a New XVA workspace or Open Pricing DB.</Text>
       </Stack>
     );
 
@@ -95,5 +97,6 @@ function Panels() {
 function PanelContent({ panel }: { readonly panel: Panel }) {
   const registerFocus = useCallback((focus: (() => void) | undefined) => registerGridFocus(panel.id, focus), [panel.id]);
   if (panel.kind === 'run') return <RunPanel panel={panel} />;
+  if (panel.kind === 'app') return <AppPanel panel={panel} />;
   return <ViewRenderer view={panel.view} outputs={{}} registerFocus={registerFocus} />;
 }
