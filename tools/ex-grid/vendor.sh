@@ -21,7 +21,7 @@ commit="$(git -C "$checkout" rev-parse HEAD)"
 
 rm -rf "$out"
 mkdir -p "$out"
-for package in core react; do
+for package in data core react; do
   (cd "$checkout/src/npm/$package" && npm pack --pack-destination "$out" >/dev/null)
 done
 cp "$checkout/src/ExGrid/wwwroot/ex-grid.min.css" "$out/"

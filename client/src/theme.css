@@ -1,0 +1,33 @@
+/* ExGrid reads its appearance from --ex- Visual Tokens (ex-grid ADR-0027/0029). This bridge maps the
+   Mantine theme onto them, so a grid follows light and dark with the rest of the workbench. It sets
+   colours and type only; no geometry and nothing inside the grid's root (ex-grid ADR-0030). */
+.qwb-grid {
+  --ex-background: var(--mantine-color-body);
+  --ex-color: var(--mantine-color-text);
+  --ex-font-family: var(--mantine-font-family);
+  --ex-header-background: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-7));
+  --ex-header-color: var(--mantine-color-dimmed);
+  --ex-heading-background: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-7));
+  --ex-heading-color: var(--mantine-color-dimmed);
+  --ex-column-rule-color: var(--mantine-color-default-border);
+  --ex-header-rule-color: var(--mantine-color-default-border);
+  --ex-heading-rule-color: var(--mantine-color-default-border);
+  --ex-row-rule-color: light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-6));
+  --ex-row-hover-background: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-6));
+  --ex-row-stripe-background: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8));
+  --ex-pinned-background: var(--mantine-color-body);
+  --ex-editor-background: var(--mantine-color-body);
+  --ex-editor-color: var(--mantine-color-text);
+  --ex-selection-fill: color-mix(in srgb, var(--mantine-primary-color-filled) 18%, transparent);
+  --ex-selection-outline: var(--mantine-primary-color-filled);
+  --ex-focus-outline: var(--mantine-primary-color-filled);
+  --ex-grid-focus-outline: var(--mantine-primary-color-filled);
+  --ex-scrollbar-color: light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-4));
+  --ex-tone-negative-color: var(--mantine-color-red-filled);
+  --ex-tone-positive-color: var(--mantine-color-teal-filled);
+  font-variant-numeric: tabular-nums;
+}
+
+:root { color-scheme: light dark; }
+[data-mantine-color-scheme='light'] { color-scheme: light; }
+[data-mantine-color-scheme='dark'] { color-scheme: dark; }
