@@ -27,6 +27,9 @@ Exit: CO01-CO07; one useful composed screen without a new bespoke Razor page. Do
 
 ## P2 — XVA from editing through history
 
+The first measures are CVA and FVA, each Before, After and incremental (owner, 2026-10-27). MVA, SIMM included, follows (P3). The first synthetic products are an IRS and an FX forward (DEFAULT, 2026-10-27).
+
+
 - Source adapters, immutable baseline, TradeInput import, workspace state and coordinated preparation.
 - Fixed XVA page: search, CDS/recovery, NS/CSA, trades/B/A and scenarios.
 - Commit/validate/freeze submission and deterministic asynchronous analytics provider.

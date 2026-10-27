@@ -100,7 +100,12 @@ asks rather than guessing either way.
 source value it overrode and the version that value came from. Editing the same field again replaces the
 value and moves the base to the version current at that edit.
 
-**Scope.** Each kind of edit belongs to one scope, which decides when it stops applying:
+**Scope.** Each kind of edit belongs to one scope, which decides when it stops applying. Scopes are the
+domain module's, not the kernel's: a module registers its edit kinds, the scope key of each, and its
+conflict groups, as it registers capabilities and history projections. The kernel stores every edit in
+the same tables with an opaque scope key and target path, and runs the same check below; it never knows
+what a counterparty or a fixing is. Rates, for example, would scope a curve edit to its currency and
+market snapshot, with no counterparty at all. XVA's kinds:
 
 | Edit | Examples | Scope |
 |---|---|---|
