@@ -169,6 +169,10 @@ Initial implementation performs the required Before/After calculations independe
 
 Preparation also resolves the applicable configurable baseline/default profile, including the uncollateralized discount-curve setting, from its recorded source/version. Adopt that configuration with the prepared context. Price captures the resulting effective values and explicit empty-override semantics; it does not rerun configuration resolution against a newer profile.
 
+**CONFIRMED (owner, 2026-10-27):** a trade's own data can change with the value date, for example when a fixing has occurred. A value date change therefore re-acquires draft trade inputs too, and each re-acquired trade is a new TradeInput version; a Run already made stays bound to the version it froze.
+
+**OPEN (proposed 2026-10-27):** how a user's edit on a trade carries to its new version. Proposal: an edit records the field and the source value it overrode. Where the new version's source value is unchanged, the edit carries over. Where it changed (a fixing landed on a field the user had overridden), the edit is not applied silently either way; the row shows the conflict and the user keeps the edit or resets the field to the source.
+
 **DEFAULT PROPOSAL:** Retain new draft trade inputs in a staging area across date/counterparty/netting-set changes, but invalidate context-dependent assignments and revalidate before including them in pricing. Replace the existing-trade baseline for the new context. This policy should be explicit in UI copy; it is not permission to carry an old counterparty's existing portfolio into another one.
 
 When multiple main choices are available, use a documented server-supplied default only when its selection policy is valid for the operation. AI requests with unresolved financially material choices must return a choice interaction. Never select the first array element as an implicit financial default.
