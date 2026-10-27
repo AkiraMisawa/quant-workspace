@@ -40,6 +40,10 @@ nix develop -c bash -c 'cd client && npm run dev'
 nix develop -c bash -c 'cd client && npm run build && npx playwright test'
 ```
 
+The AI pane runs on the scripted agent (no model) by default. To run it on Copilot, with the agent in a process of its
+own, and to open the workbench from a phone or another Mac over Tailscale, see
+[`docs/running-with-copilot.md`](docs/running-with-copilot.md) (`tools/run-with-copilot.sh --model <id>`).
+
 Playwright uses its own Chromium (`npx playwright install chromium`). Where a Chromium is already
 installed for another Playwright version, name it with `PLAYWRIGHT_CHROMIUM=/path/to/chrome`.
 `WORKBENCH_PORT` moves the host to another port. Each browser run starts the host on a database file of its own in the

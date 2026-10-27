@@ -21,23 +21,33 @@ public sealed record AgentTool(string Name, string Description, JsonObject Param
 /// <summary>AG-UI's context entry: a description of something the user is looking at. Not authority (ADR-0007 §8).</summary>
 public sealed record AgentContext(string Description, string Value);
 
-/// <summary>What the agent is asked to continue: the whole conversation, the tools it may call, and the context.</summary>
-public sealed record AgentTurn(IReadOnlyList<AgentMessage> Messages, IReadOnlyList<AgentTool> Tools, IReadOnlyList<AgentContext> Context);
+/// <summary>What the agent is asked to continue: the thread and run, the whole conversation, the tools it may call, and the context.</summary>
+public sealed record AgentTurn(string ThreadId, string RunId, IReadOnlyList<AgentMessage> Messages, IReadOnlyList<AgentTool> Tools, IReadOnlyList<AgentContext> Context);
 
-/// <summary>The agent's answer to one turn: text for the user, tool calls, or both. No tool calls ends the run.</summary>
-public sealed record AgentReply(string? Text, IReadOnlyList<AgentToolCall> ToolCalls);
+/// <summary>
+/// The run a runtime answers into. Words go to the user as they are said; a tool call is invoked by the platform's
+/// gateway for the signed-in user and its result is answered back. The runtime holds no way to act of its own.
+/// </summary>
+public interface IAgentTurnSink
+{
+    Task SayAsync(string text, CancellationToken cancellationToken);
+
+    Task<ToolResult> CallAsync(AgentToolCall call, CancellationToken cancellationToken);
+}
 
 /// <summary>Which runtime answers, as the pane shows it. <c>Simulated</c> is true for anything that is not a model.</summary>
 public sealed record AgentRuntimeInfo(string Name, string Label, bool Simulated);
 
 /// <summary>
 /// The agent runtime port (ADR-0007 §5): model interaction behind one interface, so the scripted agent, a Copilot
-/// adapter or any other runtime is chosen in the composition root and nowhere else. The runtime proposes; the
-/// platform's loop invokes tools, records events and ends runs.
+/// adapter or any other runtime is chosen in the composition root and nowhere else. The runtime decides what to say
+/// and which tools to call, through the sink; the platform invokes the tools, records the events and ends the run.
+/// A runtime whose own SDK runs the model's loop (the Copilot SDK) fits as well as one that is called turn by turn.
 /// </summary>
 public interface IAgentRuntime
 {
     AgentRuntimeInfo Info { get; }
 
-    Task<AgentReply> ReplyAsync(AgentTurn turn, CancellationToken cancellationToken);
+    /// <summary>Answers the conversation's latest request; returning ends the run.</summary>
+    Task RunAsync(AgentTurn turn, IAgentTurnSink sink, CancellationToken cancellationToken);
 }

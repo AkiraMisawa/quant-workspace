@@ -9,6 +9,8 @@ public abstract record AgentStart
     public sealed record Refused(string Code, string Message) : AgentStart;
 }
 
+sealed class AgentRunaway(string message) : Exception(message);
+
 /// <summary>
 /// The agent loop (ADR-0007): takes an AG-UI <c>RunAgentInput</c> for the signed-in user, keeps the conversation on
 /// the server, asks the configured runtime for each turn, invokes the tool calls it proposes through the tool
@@ -16,8 +18,8 @@ public abstract record AgentStart
 /// </summary>
 public sealed class AgentService(IAgentRuntime runtime, AgentToolGateway tools, AgentThreads threads)
 {
-    /// <summary>Turns a run may take before it is stopped as a runaway: a reply, or a set of tool calls and their results.</summary>
-    public const int MaxTurns = 8;
+    /// <summary>Tool calls a run may make before it is stopped as a runaway.</summary>
+    public const int MaxToolCalls = 16;
 
     public AgentRuntimeInfo Runtime => runtime.Info;
 
@@ -55,46 +57,55 @@ public sealed class AgentService(IAgentRuntime runtime, AgentToolGateway tools, 
         try
         {
             run.Append(AgUiEvents.RunStarted(run.ThreadId, run.RunId, runtime.Info));
-            for (var turn = 0; turn < MaxTurns; turn++)
-            {
-                if (run.Cancellation.IsCancellationRequested)
-                {
-                    run.Append(AgUiEvents.RunFinished(run.ThreadId, run.RunId, cancelled: true), last: true);
-                    return;
-                }
-                var reply = await runtime.ReplyAsync(new(thread.Messages, tools.Tools, context), run.Cancellation);
-                var messageId = NewId("msg");
-                if (!string.IsNullOrEmpty(reply.Text))
-                    foreach (var e in AgUiEvents.TextMessage(messageId, reply.Text)) run.Append(e);
-                foreach (var call in reply.ToolCalls)
-                    foreach (var e in AgUiEvents.ToolCall(call, messageId)) run.Append(e);
-                thread.Add(new AgentMessage(messageId, "assistant", reply.Text, reply.ToolCalls));
-                if (reply.ToolCalls.Count == 0)
-                {
-                    run.Append(AgUiEvents.RunFinished(run.ThreadId, run.RunId, cancelled: false), last: true);
-                    return;
-                }
-                foreach (var call in reply.ToolCalls)
-                {
-                    // A cancelled run invokes nothing more; each call it proposed still gets a result, so the
-                    // conversation stays one the next turn can read.
-                    var result = run.Cancellation.IsCancellationRequested
-                        ? ToolResult.Refused(tools.CapabilityOf(call.Name) ?? call.Name, "Cancelled", [new("Cancelled", "", "The user stopped the run before this call.")])
-                        : await tools.InvokeAsync(call, userId, thread.ThreadId, CancellationToken.None);
-                    var resultId = NewId("msg");
-                    thread.Add(AgentMessage.Tool(resultId, call.Id, result.Text));
-                    run.Append(AgUiEvents.ToolCallResult(resultId, call.Id, result.Text));
-                }
-            }
-            run.Append(AgUiEvents.RunError("TooManyTurns", $"The agent took {MaxTurns} turns without finishing; the run was stopped."), last: true);
+            await runtime.RunAsync(new(run.ThreadId, run.RunId, thread.Messages, tools.Tools, context), new Sink(thread, run, tools, userId), run.Cancellation);
+            run.Append(AgUiEvents.RunFinished(run.ThreadId, run.RunId, cancelled: run.Cancellation.IsCancellationRequested), last: true);
         }
         catch (OperationCanceledException) when (run.Cancellation.IsCancellationRequested)
         {
             run.Append(AgUiEvents.RunFinished(run.ThreadId, run.RunId, cancelled: true), last: true);
         }
+        catch (AgentRunaway runaway)
+        {
+            run.Append(AgUiEvents.RunError("TooManyToolCalls", runaway.Message), last: true);
+        }
         catch (Exception failure)
         {
             run.Append(AgUiEvents.RunError("AgentFailed", $"{runtime.Info.Label} failed: {failure.Message}"), last: true);
+        }
+    }
+
+    /// <summary>
+    /// What a runtime reaches the run through: every word it says and every tool it calls is recorded here, in order,
+    /// and a call is invoked by the gateway, never by the runtime. A cancelled run invokes nothing more.
+    /// </summary>
+    sealed class Sink(AgentThread thread, AgentRun run, AgentToolGateway tools, string userId) : IAgentTurnSink
+    {
+        int calls;
+
+        public Task SayAsync(string text, CancellationToken cancellationToken)
+        {
+            run.Cancellation.ThrowIfCancellationRequested();
+            if (string.IsNullOrEmpty(text)) return Task.CompletedTask;
+            var messageId = NewId("msg");
+            foreach (var e in AgUiEvents.TextMessage(messageId, text)) run.Append(e);
+            thread.Add(new AgentMessage(messageId, "assistant", text));
+            return Task.CompletedTask;
+        }
+
+        public async Task<ToolResult> CallAsync(AgentToolCall call, CancellationToken cancellationToken)
+        {
+            run.Cancellation.ThrowIfCancellationRequested();
+            if (++calls > MaxToolCalls)
+                throw new AgentRunaway($"The agent asked for more than {MaxToolCalls} tool calls in one run; the run was stopped.");
+            var messageId = NewId("msg");
+            foreach (var e in AgUiEvents.ToolCall(call, messageId)) run.Append(e);
+            thread.Add(new AgentMessage(messageId, "assistant", null, [call]));
+            // A command once invoked is not interrupted: its effect may already be in place (ADR-0007 §4).
+            var result = await tools.InvokeAsync(call, userId, thread.ThreadId, CancellationToken.None);
+            var resultId = NewId("msg");
+            thread.Add(AgentMessage.Tool(resultId, call.Id, result.Text));
+            run.Append(AgUiEvents.ToolCallResult(resultId, call.Id, result.Text));
+            return result;
         }
     }
 

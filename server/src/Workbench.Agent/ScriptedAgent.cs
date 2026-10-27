@@ -48,9 +48,27 @@ public sealed class ScriptedAgent(IEnumerable<IScriptedRequest> requests) : IAge
 
     public AgentRuntimeInfo Info { get; } = new("scripted", "scripted · no model", Simulated: true);
 
-    public Task<AgentReply> ReplyAsync(AgentTurn turn, CancellationToken cancellationToken)
+    public async Task RunAsync(AgentTurn turn, IAgentTurnSink sink, CancellationToken cancellationToken)
     {
-        var turns = Turns(turn.Messages);
+        var messages = turn.Messages.ToList();
+        while (true)
+        {
+            var (text, call) = Decide(messages, turn);
+            if (call is null)
+            {
+                await sink.SayAsync(text!, cancellationToken);
+                return;
+            }
+            var result = await sink.CallAsync(call, cancellationToken);
+            messages.Add(new AgentMessage($"local-{call.Id}", "assistant", null, [call]));
+            messages.Add(AgentMessage.Tool($"local-result-{call.Id}", call.Id, result.Text));
+        }
+    }
+
+    /// <summary>The next step: words to end the run with, or one tool call.</summary>
+    (string? Text, AgentToolCall? Call) Decide(IReadOnlyList<AgentMessage> conversation, AgentTurn turn)
+    {
+        var turns = Turns(conversation);
         if (turns.Count == 0) return Reply("There is no request to answer.");
         var current = turns[^1];
 
@@ -78,7 +96,7 @@ public sealed class ScriptedAgent(IEnumerable<IScriptedRequest> requests) : IAge
             if (turn.Tools.All(t => t.Name != name))
                 return Reply($"{next.CapabilityId} is not offered to me, so I cannot do that.");
             var inputs = next.Inputs(new(request, turn.Context, done));
-            return Task.FromResult(new AgentReply(null, [new($"call-{Guid.CreateVersion7():N}", name, inputs.ToJsonString())]));
+            return (null, new($"call-{Guid.CreateVersion7():N}", name, inputs.ToJsonString()));
         }
         if (now.Count == 0) return Reply("That was done already; there is nothing more to do for it.");
         return Reply(string.Join(" ", now.Select(r => plan.First(p => p.CapabilityId == r.CapabilityId).Done(r.Outputs))));
@@ -102,7 +120,7 @@ public sealed class ScriptedAgent(IEnumerable<IScriptedRequest> requests) : IAge
             + (string.IsNullOrEmpty(hint) ? "." : $" ({hint}).");
     }
 
-    static Task<AgentReply> Reply(string text) => Task.FromResult(new AgentReply(text, []));
+    static (string? Text, AgentToolCall? Call) Reply(string text) => (text, null);
 
     /// <summary>A user message and the tool results that followed it.</summary>
     sealed record Turn(string Request, List<ToolResult> Results)

@@ -37,7 +37,7 @@ idempotency keys through the application executor, and a scripted transcript lab
    (AI04). Cancelling stops the run between tool calls; a command already invoked is not interrupted, since its effect
    may already be in place. Threads are held in memory for now and a restart loses them; that is recorded as a limit.
 5. **The agent is a port.** `IAgentRuntime` takes the conversation, the tools and the context, and answers text and
-   tool calls; the loop that invokes the tools, records events and decides when a run ends is the platform's. The
+   tool calls into a sink; the loop that invokes the tools, records events, caps the calls and ends the run is the platform's. The
    runtime is chosen by configuration (`Agent:Runtime`); an unknown or unavailable one stops startup or fails the run,
    and never falls back to another (CLAUDE.md: never silently fall back from a real provider to a mock).
    **The agent runs under its own identity, which can do nothing in the workbench (C44).** The Copilot SDK runtime
@@ -45,7 +45,17 @@ idempotency keys through the application executor, and a scripted transcript lab
    web process, so the two identities never share one. That account reaches the model and nothing else. The runtime
    proposes tool calls; the loop invokes them in the workbench for the signed-in user (§3), so what the agent can
    change is what the user may change through a registered command, never what either service account may write.
-6. **Until the Copilot adapter exists, the runtime is a scripted agent, and it says so.** It has no model. Modules
+   **The two processes meet on a narrow wire.** The agent host (`Workbench.AgentHost`) listens on a loopback address
+   only and answers only a caller holding a key the two share. The workbench posts a turn (the latest request with its
+   context, the conversation before it written out, the tools by their schemas, the model) and reads the answer as
+   one JSON line per step: words, a tool call, the end, or a failure. A tool call is invoked by the loop as in §3 and
+   its result posted back; aborting a run aborts the host's turn. The host references no workbench project but the
+   wire's, so it has no way to reach a store or a command. On the Copilot SDK it runs the SDK's empty mode: no
+   built-in tool (shell, files, web) exists, the session is offered the workbench's tools only, any other permission
+   request is rejected, and the SDK's own session store, skills and configuration discovery are off. The credential
+   is read from the host's environment (or a file only its user reads) and given to the SDK; the logged-in user's
+   credentials are never used, so a missing token fails the run instead of borrowing one.
+6. **Without a model, the runtime is a scripted agent, and it says so.** It has no model. Modules
    register the requests it understands (the Rates module: create an IRS line from the terms written in the request,
    start and stop ticking), it fills only the terms the request states, and a refusal's missing terms become its
    question. The pane names it `scripted · no model` in its header and on every card. It is a stand-in for the UI and the gateway, not
@@ -63,9 +73,15 @@ idempotency keys through the application executor, and a scripted transcript lab
 
 - A new project `Workbench.Agent` holds the AG-UI events, threads, the loop, the tool gateway, the runtime port and the
   scripted runtime. It knows no domain; the Rates module registers its scripted requests.
-- The Copilot adapter is one more `IAgentRuntime`, configured in the composition root, talking to a separate agent
-  process built on the Copilot SDK (C44). That process authenticates as a GitHub App installation with the Copilot
-  Requests permission only and runs beside the web server on its machine (C45).
+- The Copilot adapter is one more `IAgentRuntime` (`copilot`, `CopilotAgentRuntime`), configured in the composition
+  root, talking to the agent host built on the Copilot SDK (C44). At the company the host authenticates as a GitHub
+  App installation with the Copilot Requests permission only and runs beside the web server on its machine (C45); in
+  this personal proof of concept it uses the owner's fine-grained token (C46). The runtime port changed for it: a
+  runtime answers into a sink (say, call) rather than returning one step at a time, so a runtime whose SDK runs the
+  model's loop fits, and the scripted agent runs the same way. The loop still invokes every call and caps a run at
+  sixteen.
+- An installation token lasts an hour and the SDK reads it when its client starts; refreshing it means restarting the
+  host's client, which is not built (the personal token does not expire within a session).
 - docs/11 AI04 (reconnect) and AI06 (no unregistered path) gain an application part; AI01 needs a real runtime.
 
 ## Rejected

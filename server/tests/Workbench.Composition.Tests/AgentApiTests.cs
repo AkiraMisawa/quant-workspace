@@ -185,18 +185,21 @@ public class AgentApiTests : IClassFixture<WorkbenchFactory>
     [Fact] // ADR-0007 §5: a runtime that is not configured stops startup instead of falling back to the scripted one
     public void An_unknown_runtime_stops_startup()
     {
-        var copilot = host.WithWebHostBuilder(b => b.UseSetting("Agent:Runtime", "copilot"));
-        var failure = Assert.Throws<InvalidOperationException>(() => copilot.CreateClient());
-        Assert.Contains("copilot", failure.Message, StringComparison.Ordinal);
+        var unknown = host.WithWebHostBuilder(b => b.UseSetting("Agent:Runtime", "llama"));
+        var failure = Assert.Throws<InvalidOperationException>(() => unknown.CreateClient());
+        Assert.Contains("'llama'", failure.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>Proposes one call, then answers with text once it has a result.</summary>
+    /// <summary>Calls one tool, then says it is done.</summary>
     sealed class Proposing(AgentToolCall call) : IAgentRuntime
     {
         public AgentRuntimeInfo Info { get; } = new("test", "test runtime", true);
 
-        public Task<AgentReply> ReplyAsync(AgentTurn turn, CancellationToken cancellationToken) =>
-            Task.FromResult(turn.Messages[^1].Role == "tool" ? new AgentReply("done", []) : new AgentReply(null, [call]));
+        public async Task RunAsync(AgentTurn turn, IAgentTurnSink sink, CancellationToken cancellationToken)
+        {
+            await sink.CallAsync(call, cancellationToken);
+            await sink.SayAsync("done", cancellationToken);
+        }
     }
 
     /// <summary>Waits until the run is cancelled.</summary>
@@ -205,11 +208,10 @@ public class AgentApiTests : IClassFixture<WorkbenchFactory>
         public TaskCompletionSource Asked { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public AgentRuntimeInfo Info { get; } = new("test", "test runtime", true);
 
-        public async Task<AgentReply> ReplyAsync(AgentTurn turn, CancellationToken cancellationToken)
+        public async Task RunAsync(AgentTurn turn, IAgentTurnSink sink, CancellationToken cancellationToken)
         {
             Asked.TrySetResult();
             await Task.Delay(Timeout.Infinite, cancellationToken);
-            throw new InvalidOperationException("Not reached.");
         }
     }
 }
