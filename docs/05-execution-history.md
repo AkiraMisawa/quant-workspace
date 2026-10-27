@@ -137,6 +137,10 @@ History first groups by the business Run and then by Cases. It may also filter/g
 
 The history is a retained dataset, and its groupings (by workspace, by analysis group, by parent chain, by counterparty registration) are registered views over it, so a new grouping is a view definition rather than a new page.
 
+**CONFIRMED (owner, 2026-10-27):** the history offers domain views built on the all-Runs list. Activating XVA shows XVA Runs only, with their prices in the grid; activating Rates shows Rates pricing results only.
+
+**DEFAULT PROPOSAL:** a domain module registers a history projection and the views over it. The projection is one row per Case, holding the domain's figures (for XVA, e.g. Before, After and incremental values per adjustment). It is derived from immutable results, indexed, and rebuildable, as `docs/06-persistence-migration.md` §3 allows for history read models. The server filters, sorts and pages it; the grid shows it. Adding a domain adds a projection and views, not a history page. An unavailable figure stays unavailable in the projection.
+
 Every saved result should expose provider identity, adapter version, engine/model/configuration version when available, market/reference snapshot IDs, units, and actual-versus-simulated provenance. Missing legacy metadata is marked unknown, not fabricated.
 
 **CONFIRMED:** authorized developers can retrieve a diagnostic bundle using Run ID. Include a machine-readable manifest, accepted input/provenance where available, baseline/draft references, invocation graph, case bindings, native request/response artifacts, versions, status, and relevant logs. Include hashes and a list of missing files. The retrieval API resolves through metadata and storage abstraction; callers do not need a server-local folder path. Apply authorization to the Run and each referenced artifact/result.
