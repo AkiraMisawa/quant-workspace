@@ -127,4 +127,5 @@ public sealed record ConventionProfile(
     int SpotLagDays,
     int PaymentLagDays,
     StubRule Stub,
-    bool EndOfMonth);
+    bool EndOfMonth,
+    bool Overnight);

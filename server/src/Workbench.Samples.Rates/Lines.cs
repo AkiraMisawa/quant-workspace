@@ -25,7 +25,29 @@ public sealed record LegTerms(
     LegQuote? Quote,
     Tenor PaymentFrequency,
     Tenor? ResetFrequency,
-    bool Floating);
+    bool Floating)
+{
+    /// <summary>The second level of the leg's terms (C43), collapsed by default; empty fields follow the profile.</summary>
+    public LegDetail Detail { get; init; } = LegDetail.None;
+}
+
+/// <summary>
+/// A leg's second-level terms (C43). Day count, accrual adjustment and payment delay override the convention
+/// profile; the rest are terms the pricer reads. A null field is not set.
+/// </summary>
+public sealed record LegDetail(
+    DayCountBasis? DayCount = null,
+    BusinessDayAdjustment? Adjustment = null,
+    bool? DailyAverage = null,
+    int? ObservationShiftDays = null,
+    int? LookbackDays = null,
+    int? PaymentDelayDays = null,
+    bool? InArrears = null,
+    double? Gearing = null,
+    double? CurrentResetPercent = null)
+{
+    public static LegDetail None { get; } = new();
+}
 
 /// <summary>The basic level of a row's terms (C40). One valuation date belongs to the grid, not the row.</summary>
 public sealed record RatesLine(
@@ -85,6 +107,10 @@ public static class LineResolver
         if (line.MandatoryBreak is { } breakDate && (breakDate <= start || breakDate >= end))
             issues.Add($"The mandatory break {breakDate:yyyy-MM-dd} is not between the start and the end.");
 
+        foreach (var (leg, n) in new[] { (line.Leg1, 1), (line.Leg2, 2) })
+            if (leg.Detail.CurrentResetPercent is not null && start > spot)
+                issues.Add($"Leg {n}: a current reset does not apply to a forward-starting trade.");
+
         var exchange = line.Product == RatesProduct.Ccs;
         var legs = new List<ResolvedLeg>();
         foreach (var (terms, profile) in new[] { (line.Leg1, p1), (line.Leg2, p2!) })
@@ -92,8 +118,15 @@ public static class LineResolver
             try
             {
                 var calendar = conventions.Calendar(profile.CalendarId)!;
-                legs.Add(new(terms, profile, ScheduleGenerator.Generate(
-                    new LegScheduleRequest(start, end, terms.PaymentFrequency, terms.ResetFrequency, terms.Notional!.Value, exchange), profile, calendar)));
+                // The leg's own second-level terms override its profile (C43); the schedule records the profile it used.
+                var effective = profile with
+                {
+                    DayCount = terms.Detail.DayCount ?? profile.DayCount,
+                    Adjustment = terms.Detail.Adjustment ?? profile.Adjustment,
+                    PaymentLagDays = terms.Detail.PaymentDelayDays ?? profile.PaymentLagDays,
+                };
+                legs.Add(new(terms, effective, ScheduleGenerator.Generate(
+                    new LegScheduleRequest(start, end, terms.PaymentFrequency, terms.ResetFrequency, terms.Notional!.Value, exchange), effective, calendar)));
             }
             catch (ScheduleRefused refused)
             {
@@ -117,6 +150,12 @@ public static class LineResolver
             if (leg.Quote is { Kind: QuoteKind.FixedRatePercent } && leg.Floating) issues.Add($"Leg {n} is floating; a fixed rate does not apply.");
             if (leg.Quote is { Kind: QuoteKind.FloatSpreadPercent } && !leg.Floating) issues.Add($"Leg {n} is fixed; a floating spread does not apply.");
             if (!leg.Floating && leg.ResetFrequency is not null) issues.Add($"Leg {n} is fixed and has no resets.");
+            var d = leg.Detail;
+            if (!leg.Floating && (d.DailyAverage is not null || d.ObservationShiftDays is not null || d.LookbackDays is not null
+                    || d.InArrears is not null || d.Gearing is not null || d.CurrentResetPercent is not null))
+                issues.Add($"Leg {n} is fixed; floating-rate terms do not apply.");
+            if (d.Gearing == 0) issues.Add($"Leg {n}: a gearing of 0 removes the floating rate; leave it empty for 1.");
+            if (d.ObservationShiftDays < 0 || d.LookbackDays < 0 || d.PaymentDelayDays < 0) issues.Add($"Leg {n}: shifts, lookbacks and delays are not negative.");
         }
         if (line.Leg1.Quote is null && line.Leg2.Quote is null)
             issues.Add("Both legs are at par; give one leg's quote so the other can be solved.");
@@ -139,6 +178,8 @@ public static class LineResolver
         var profile = conventions.Find(leg.Currency, leg.Index);
         if (profile is null) issues.Add($"No confirmed conventions for {leg.Currency} {leg.Index}.");
         else if (conventions.Calendar(profile.CalendarId) is null) issues.Add($"Calendar {profile.CalendarId} of {profile.Id} is not available.");
+        else if (leg.Detail.DailyAverage is not null && !profile.Overnight)
+            issues.Add($"{leg.Currency} {leg.Index}: daily averaging is for overnight rates only.");
         return profile;
     }
 }

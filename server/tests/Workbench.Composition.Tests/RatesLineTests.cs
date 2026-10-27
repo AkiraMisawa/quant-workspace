@@ -10,7 +10,7 @@ public class RatesLineTests
 
     static ConventionProfile Profile(string currency, string index) =>
         new($"test.{currency}.{index}", "1", currency, index, DayCountBasis.Act360, Calendar.Id, BusinessDayAdjustment.ModifiedFollowing,
-            SpotLagDays: 2, PaymentLagDays: 2, StubRule.ShortFront, EndOfMonth: false);
+            SpotLagDays: 2, PaymentLagDays: 2, StubRule.ShortFront, EndOfMonth: false, Overnight: index.EndsWith("-ON"));
 
     static readonly ConventionRegistry Conventions = new(
         [Profile("TST", "FIXED"), Profile("TST", "TEST-ON"), Profile("TS2", "TEST2-ON")], [Calendar]);
@@ -83,4 +83,54 @@ public class RatesLineTests
 
         Assert.Contains(LineResolver.Resolve(line, ValuationDate, Conventions).Issues, i => i.Contains("mandatory break"));
     }
+}
+
+// C43: the second level of a leg's terms, over the same synthetic profiles.
+public class RatesLegDetailTests
+{
+    static readonly DateOnly ValuationDate = new(2026, 10, 27);
+    static readonly IBusinessCalendar Calendar = new WeekendsOnlyCalendar();
+
+    static ConventionProfile Profile(string index, bool overnight) =>
+        new($"test.{index}", "1", "TST", index, DayCountBasis.Act360, Calendar.Id, BusinessDayAdjustment.ModifiedFollowing,
+            2, 2, StubRule.ShortFront, false, overnight);
+
+    static readonly ConventionRegistry Conventions = new([Profile("FIXED", false), Profile("TEST-ON", true), Profile("TEST-TERM", false)], [Calendar]);
+
+    static RatesLine Irs(LegDetail? fixedDetail = null, LegDetail? floatDetail = null, string index = "TEST-ON", DateOrTenor? start = null) =>
+        new("L1", RatesProduct.Irs, start, DateOrTenor.After(Tenor.Parse("2y")), Direction.Pay,
+            new LegTerms("TST", "FIXED", 1_000_000, null, Tenor.Parse("12m"), null, false) { Detail = fixedDetail ?? LegDetail.None },
+            new LegTerms("TST", index, 1_000_000, new LegQuote(QuoteKind.FloatSpreadPercent, 0), Tenor.Parse("12m"), null, true) { Detail = floatDetail ?? LegDetail.None },
+            null, null, true);
+
+    [Fact] // C43: a leg's day count and payment delay override its profile, and the schedule follows them
+    public void Second_level_terms_override_the_profile()
+    {
+        var resolved = LineResolver.Resolve(Irs(new LegDetail(DayCount: DayCountBasis.Act365Fixed, PaymentDelayDays: 0)), ValuationDate, Conventions);
+
+        var fixedLeg = resolved.Legs[0];
+        Assert.Equal(DayCountBasis.Act365Fixed, fixedLeg.Profile.DayCount);
+        Assert.Equal(fixedLeg.Schedule.Periods[0].AccrualEnd, fixedLeg.Schedule.Periods[0].PaymentDate);
+        Assert.Equal(DayCountBasis.Act360, resolved.Legs[1].Profile.DayCount);
+    }
+
+    [Fact] // C43: daily averaging is for overnight rates only
+    public void Daily_average_on_a_term_index_is_an_issue()
+    {
+        Assert.Empty(LineResolver.Resolve(Irs(floatDetail: new LegDetail(DailyAverage: true)), ValuationDate, Conventions).Issues);
+        Assert.NotEmpty(LineResolver.Resolve(Irs(floatDetail: new LegDetail(DailyAverage: true), index: "TEST-TERM"), ValuationDate, Conventions).Issues);
+    }
+
+    [Fact] // C43: the current reset does not apply to a forward-starting trade
+    public void A_current_reset_on_a_forward_start_is_an_issue()
+    {
+        var detail = new LegDetail(CurrentResetPercent: 0.5);
+
+        Assert.Empty(LineResolver.Resolve(Irs(floatDetail: detail), ValuationDate, Conventions).Issues);
+        Assert.NotEmpty(LineResolver.Resolve(Irs(floatDetail: detail, start: DateOrTenor.After(Tenor.Parse("1y"))), ValuationDate, Conventions).Issues);
+    }
+
+    [Fact] // C43: floating-rate terms on a fixed leg are refused, not ignored
+    public void Floating_terms_on_a_fixed_leg_are_an_issue() =>
+        Assert.NotEmpty(LineResolver.Resolve(Irs(new LegDetail(Gearing: -1)), ValuationDate, Conventions).Issues);
 }

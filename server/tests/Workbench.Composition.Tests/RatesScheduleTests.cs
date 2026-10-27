@@ -10,7 +10,7 @@ public class RatesScheduleTests
 
     static ConventionProfile Profile(StubRule stub = StubRule.ShortFront, int paymentLag = 2, bool endOfMonth = false) =>
         new("test.act360", "1", "TST", "TEST-ON", DayCountBasis.Act360, Calendar.Id, BusinessDayAdjustment.ModifiedFollowing,
-            SpotLagDays: 2, PaymentLagDays: paymentLag, stub, endOfMonth);
+            SpotLagDays: 2, PaymentLagDays: paymentLag, stub, endOfMonth, Overnight: true);
 
     static LegSchedule Generate(DateOnly start, DateOnly end, string pay, string? reset = null, bool exchange = false, ConventionProfile? profile = null) =>
         ScheduleGenerator.Generate(new LegScheduleRequest(start, end, Tenor.Parse(pay), reset is null ? null : Tenor.Parse(reset), 1_000_000, exchange),
