@@ -9,6 +9,7 @@ public class WorkspaceTests
     sealed class Source(string version, Dictionary<(string, string), JsonNode?> values) : ISourceVersion
     {
         public string Version => version;
+        public JsonObject Descriptor => new() { ["version"] = version };
         public SourceValue? Read(string entity, string field) =>
             values.TryGetValue((entity, field), out var v) ? new SourceValue(v?.DeepClone()) : null;
     }

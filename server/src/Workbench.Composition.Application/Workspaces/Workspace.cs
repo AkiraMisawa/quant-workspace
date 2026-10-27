@@ -21,8 +21,18 @@ public sealed record SourceValue(JsonNode? Value);
 public interface ISourceVersion
 {
     string Version { get; }
+
+    /// <summary>
+    /// What acquires exactly this version again: stored with the workspace, so the workspace can be restored
+    /// after a restart. The module that resolves it must answer the same <see cref="Version"/>, or refuse.
+    /// </summary>
+    JsonObject Descriptor { get; }
+
     SourceValue? Read(string entity, string field);
 }
+
+/// <summary>Restores a module's source version from its descriptor. Registered per workspace app.</summary>
+public delegate ISourceVersion SourceResolver(JsonObject descriptor);
 
 /// <summary>
 /// A user's override: its value, and the base it overrode, the source values of the field's conflict group

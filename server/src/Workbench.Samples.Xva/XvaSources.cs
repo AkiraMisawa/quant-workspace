@@ -80,7 +80,9 @@ public sealed class XvaSourceVersion : ISourceVersion
     public decimal CdsRecovery { get; }
     public decimal? CvaRecovery { get; }
     public string Version { get; }
+    public JsonObject Descriptor => new() { ["registration"] = Registration.Key, ["valueDate"] = ValueDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), ["existingCount"] = existingCount };
 
+    readonly int existingCount;
     readonly Dictionary<string, SourceTrade> trades;
 
     public XvaSourceVersion(string registrationKey, DateOnly valueDate, int existingCount)
@@ -89,6 +91,7 @@ public sealed class XvaSourceVersion : ISourceVersion
         Agreement = XvaCatalog.AgreementOf(registrationKey);
         ValueDate = valueDate;
         Existing = [.. Enumerable.Range(1, existingCount).Select(i => Generate(Registration, $"{Registration.Code}-{Registration.LegalEntity}-E{i:D5}", false, valueDate)).OfType<SourceTrade>()];
+        this.existingCount = existingCount;
         New = [.. Enumerable.Range(1, 3).Select(i => Generate(Registration, $"DRAFT-{Registration.LegalEntity}-{i}", true, valueDate)).OfType<SourceTrade>()];
         trades = Existing.Concat(New).ToDictionary(t => t.TradeId);
         CdsRecovery = 0.4m;
@@ -96,6 +99,12 @@ public sealed class XvaSourceVersion : ISourceVersion
         CvaRecovery = Registration.LegalEntity == "LE-01" ? null : 0.35m;
         Version = $"{registrationKey}@{valueDate:yyyy-MM-dd}#{existingCount}";
     }
+
+    /// <summary>Acquires the version a descriptor names again. The synthetic source is deterministic, so it is the same.</summary>
+    public static XvaSourceVersion Resolve(JsonObject descriptor) => new(
+        descriptor["registration"]!.GetValue<string>(),
+        DateOnly.ParseExact(descriptor["valueDate"]!.GetValue<string>(), "yyyy-MM-dd", CultureInfo.InvariantCulture),
+        descriptor["existingCount"]!.GetValue<int>());
 
     public SourceTrade? Trade(string tradeId) => trades.GetValueOrDefault(tradeId);
 

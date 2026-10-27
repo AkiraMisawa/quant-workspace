@@ -35,6 +35,13 @@ Status: **CONFIRMED** = explicit user requirement or supplied operational fact. 
 | C27 | (2026-10-26) Primary acceptance criterion: a new capability is exposed through commands, AI, user-defined workflows and composed views without modifying the XVA pricer or adding a bespoke page. |
 | C28 | (2026-10-26) Client state is split into server, workspace, local UI and execution state. The financial following rules live once, on the server; the client sends typed changes and shows the server's effective values. A TypeScript copy is added only if measured edit latency requires it. ExGrid owns no business rule. [ADR-0003](adr/0003-client-state-and-the-effective-pricing-input.md) |
 | C29 | (2026-10-26) The workspace stays responsive with tens of thousands of trades: the server pages effective rows, ExGrid renders only what is visible, and the user's changes are stored on the server (ADR-0003 §4, §6). |
+| C30 | (2026-10-27) Users sign in through the company's Microsoft Entra ID (ME-ID) single sign-on, via MSAL. The platform takes the identity from that token; it adds no login of its own. |
+| C31 | (2026-10-27) Runs and workspaces are visible to their owner, to developers and to administrators, and to no one else. (Read as owner plus the two roles; to be confirmed if "developer" meant the creator only.) |
+| C32 | (2026-10-27) A saved workflow (and view) is managed by the user who saved it or an administrator. Shared with a desk, it is visible to that desk; shared with everyone, to every user. |
+| C33 | (2026-10-27) Retention: a workspace whose edits are all in the database and that has been followed by a later Run may be deleted at any time after its retention period. Runs keep their own frozen inputs (ADR-0003 §6). |
+| C34 | (2026-10-27) The company's agent is GitHub Copilot, with several selectable models. The agent runtime and model therefore stay behind the adapter port (D10); no model is assumed. |
+| C35 | (2026-10-27) Production also starts on SQLite. Supersedes the "production DB open" part of D04 for the first rollout; HA and multi-instance stay open. |
+| C36 | (2026-10-27) Touch support waits for ExGrid's touch release (expected within a day of this date); the workbench does not build its own touch handling for the grid meanwhile. |
 
 ## Recommended initial choices
 
@@ -43,7 +50,7 @@ Status: **CONFIRMED** = explicit user requirement or supplied operational fact. 
 | D01 | Target .NET 10; pin an available approved patch and compatible dependencies at bootstrap. |
 | D02 | Start with a modular application host plus a separate persistent native worker. Logical modules do not each imply a deployed service. |
 | D03 | Use an editable Workspace distinct from ephemeral UiSession. AnalysisRun/public RunId represents one business submission, with multiple Cases underneath. |
-| D04 | Local demo: SQLite for structured metadata and an immutable directory artifact store for bytes. Production relational DB remains open. |
+| D04 | Local demo: SQLite for structured metadata and an immutable directory artifact store for bytes. Production starts on SQLite too (C35); HA and multi-instance remain open. |
 | D05 | One typed workspace state is the source for UI projections and final submission; immutable baseline and edit provenance remain separate. |
 | D06 | Manual field edits own that field until reset to automatic; a later main change updates only compatible automatic fields. This is a proposed policy, not a confirmed historic rule. |
 | D07 | On incompatible context changes, preserve downloaded new trades in a staging area, reset source-specific assignments and require revalidation before reuse. |

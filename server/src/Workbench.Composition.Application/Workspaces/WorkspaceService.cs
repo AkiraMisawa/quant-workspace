@@ -51,11 +51,13 @@ public sealed class WorkspaceRefused(string code, string message, IReadOnlyList<
 }
 
 /// <summary>
-/// Workspaces in process memory (slice 02; durable storage follows). Every command names the revision it was
-/// taken against and is refused if the workspace has moved since, so an outcome never depends on timing.
+/// The workspace commands. Every command names the revision it was taken against and is refused if the
+/// workspace has moved since, so an outcome never depends on timing. Each accepted command is written to the
+/// store before it is answered (ADR-0003 §6); states are cached in memory once loaded.
 /// </summary>
-public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rules, TimeProvider clock)
+public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rules, TimeProvider clock, IWorkspaceStore? store = null)
 {
+    readonly IWorkspaceStore store = store ?? new InMemoryWorkspaceStore();
     readonly Dictionary<string, WorkspaceState> workspaces = [];
     readonly Lock gate = new();
 
@@ -65,30 +67,36 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
         var id = $"ws-{Guid.CreateVersion7():N}";
         var log = ImmutableList<EditEntry>.Empty
             .Add(new EditEntry(1, clock.GetUtcNow(), owner, EditKind.Context, null, null, context.DeepClone(), null))
-            .Add(new EditEntry(2, clock.GetUtcNow(), owner, EditKind.Acquire, null, null, JsonValue.Create(source.Version), null));
+            .Add(new EditEntry(2, clock.GetUtcNow(), owner, EditKind.Acquire, null, null, Acquired(source), null));
         var state = new WorkspaceState(id, owner, app, (JsonObject)context.DeepClone(), source,
             ImmutableDictionary<EditTarget, Override>.Empty, ImmutableDictionary<EditTarget, Conflict>.Empty,
             ImmutableDictionary<EditTarget, LostTarget>.Empty, log);
-        lock (gate) workspaces[id] = state;
+        lock (gate)
+        {
+            store.Insert(state);
+            workspaces[id] = state;
+        }
         return state;
     }
 
     public WorkspaceState? Find(string workspaceId)
     {
-        lock (gate) return workspaces.GetValueOrDefault(workspaceId);
+        lock (gate) return Cached(workspaceId);
     }
 
     public IReadOnlyList<WorkspaceState> OwnedBy(string owner)
     {
-        lock (gate) return workspaces.Values.Where(w => w.Owner == owner).ToList();
+        lock (gate) return [.. store.OwnedBy(owner).Select(id => Cached(id) ?? throw new InvalidOperationException($"Workspace {id} is listed but cannot be loaded."))];
     }
 
+    /// <summary>Deletes the workspace. Runs keep their own frozen copies; the store keeps the log that explains them.</summary>
     public void Delete(string workspaceId, string user)
     {
         lock (gate)
         {
             var state = Get(workspaceId);
             if (state.Owner != user) throw new WorkspaceRefused("NotOwner", "Only the workspace's owner deletes it.");
+            store.Delete(workspaceId, clock.GetUtcNow());
             workspaces.Remove(workspaceId);
         }
     }
@@ -202,7 +210,7 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
                 Lost = lost.ToImmutable(),
                 Log = state.Log
                     .Add(Entry(state, seq, user, EditKind.Context, null, context))
-                    .Add(Entry(state, seq + 1, user, EditKind.Acquire, null, JsonValue.Create(source.Version))),
+                    .Add(Entry(state, seq + 1, user, EditKind.Acquire, null, Acquired(source))),
             };
         });
         return (state, summary);
@@ -263,13 +271,25 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
             if (state.Revision != expectedRevision)
                 throw new WorkspaceRefused("RevisionMoved", $"The workspace is at revision {state.Revision}, not {expectedRevision}.");
             var next = change(state);
+            store.Commit(state, next, clock.GetUtcNow());
             workspaces[workspaceId] = next;
             return next;
         }
     }
 
+    WorkspaceState? Cached(string workspaceId)
+    {
+        if (workspaces.TryGetValue(workspaceId, out var state)) return state;
+        if (store.Load(workspaceId) is not { } loaded) return null;
+        workspaces[workspaceId] = loaded;
+        return loaded;
+    }
+
     WorkspaceState Get(string workspaceId) =>
-        workspaces.GetValueOrDefault(workspaceId) ?? throw new WorkspaceRefused("UnknownWorkspace", $"No workspace {workspaceId}.");
+        Cached(workspaceId) ?? throw new WorkspaceRefused("UnknownWorkspace", $"No workspace {workspaceId}.");
+
+    static JsonObject Acquired(ISourceVersion source) =>
+        new() { ["version"] = source.Version, ["descriptor"] = source.Descriptor.DeepClone() };
 
     IEditRules RulesOf(string app) =>
         rules.GetValueOrDefault(app) ?? throw new InvalidOperationException($"No module registered edit rules for {app}.");
