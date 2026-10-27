@@ -30,7 +30,7 @@ describe('what a cell accepts', () => {
 describe('EditQueue (ADR-0003, spine 6)', () => {
   it("chains this session's edits on the revision each produced", async () => {
     const sent: number[] = [];
-    const queue = new EditQueue(2, async (revision) => { sent.push(revision); return view(revision + 1); }, () => {}, () => {});
+    const queue = new EditQueue<PendingEdit, XvaWorkspaceView>(2, async (revision) => { sent.push(revision); return view(revision + 1); }, () => {}, () => {});
 
     await Promise.all([queue.push({ entity: 'trade:A', field: 'notional', value: 1 }), queue.push({ entity: 'trade:B', field: 'notional', value: 2 })]);
 
@@ -40,7 +40,7 @@ describe('EditQueue (ADR-0003, spine 6)', () => {
 
   it('drops what was queued behind a revision moved elsewhere, until the workspace is read again', async () => {
     const refused: PendingEdit[] = [];
-    const queue = new EditQueue(5, async (revision) => {
+    const queue = new EditQueue<PendingEdit, XvaWorkspaceView>(5, async (revision) => {
       if (revision === 5) throw new ApiError(409, { code: 'RevisionMoved', message: 'moved', issues: [] });
       return view(revision + 1);
     }, () => {}, (edit) => refused.push(edit));

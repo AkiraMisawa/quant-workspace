@@ -122,7 +122,7 @@ Every provider is simulated and every figure synthetic, labelled `simulated` in 
 - Run views are matched to Runs by output name, not by contract.
 - Touch waits for ExGrid's touch release (C36).
 
-## Slice 03: the Rates line pricer (server side so far)
+## Slice 03: the Rates line pricer
 
 Plan: [docs/plans/slice-03-rates-line-pricer.md](docs/plans/slice-03-rates-line-pricer.md). Decisions: C37 to C43 in `docs/00-decisions.md`, ADR-0004 (accepted 2026-10-27).
 
@@ -136,6 +136,7 @@ Plan: [docs/plans/slice-03-rates-line-pricer.md](docs/plans/slice-03-rates-line-
 - **Capture** (`rates.capture`): saves the frame the user saw as a Run, with its own snapshot, refused (`FrameMoved`) when another frame is shown by then.
 - **HTTP**: `/api/rates/market`, `/api/rates/workspaces/...` (create, view, add, edit, remove a line, cashflows and cashflow edits, resolutions, valuation date, price, start live, delete), `/api/rates/live/{id}/frames|capture`.
 - **Pricing DB**: the Rates view lists one row per Run: valuation date, price or capture, snapshot, lines priced, failed and not priced, execution mode.
+- **Client**: the Rates page (`New Rates workspace`, Ctrl+Alt+R). One ExGrid row per line, keyed by line, with Header Groups over Result, Trade, Leg 1, Leg 2 and Terms; the line and its actions (Cashflows, Remove) are pinned. Cells the user set, held edits, lines that cannot be priced and figures of an older revision are painted as Cell States with their reasons. Each leg's second level (C43) opens and closes from a button beside the grid, and the group's caption says which. Cashflows opens a second ExGrid over the line's periods, whose dates, notional and rate are editable, with its notional exchanges below. Start live and Stop live, Capture, and Price (against the snapshot shown) are buttons and the palette commands `Price Rates workspace`, `Start or stop Rates live` and `Capture Rates live frame`. The edit queue the XVA page used is now generic and shared.
 - **Configuration**: convention profiles and the synthetic market are configuration (`Rates` section). None is configured by default. `appsettings.Development.json` carries the convention table proposed on 2026-10-27, still unconfirmed, on a weekends-only calendar: its profile version says `unconfirmed` and every row names its profiles.
 
 ### Verification performed
@@ -144,6 +145,16 @@ Plan: [docs/plans/slice-03-rates-line-pricer.md](docs/plans/slice-03-rates-line-
 |---|---|
 | `dotnet test server/Workbench.slnx` | 120 passed; the Rates tests (56) three times |
 | `dotnet run` (Development) | Started; `/api/rates/market` advanced with the ticker |
+| `npm test` (Vitest) | 27 passed |
+| `npx playwright test` (Chromium, headless, Linux) | 9 passed; the two Rates tests also with `--repeat-each=3` (6 passed) |
+
+| Acceptance | Status |
+|---|---|
+| A line typed by keyboard prices live, captures and prices once (C40, docs/07 §3) | Passed (Playwright) |
+| Manual and live agree on the same input and market (docs/07 acceptance 4) | Passed (xUnit) |
+| An edit moves the live subscription to its revision; capture refuses a frame no longer shown (spine 6) | Passed (xUnit) |
+| Cashflow edits carry, conflict or are lost when terms move (ADR-0004) | Passed (xUnit). Not yet driven in the browser. |
+| Touch, tablet and phone layouts | Not verified; waits for ExGrid's touch release (C36) |
 
 ### Providers
 
@@ -154,7 +165,9 @@ The provider and the market are simulated. Real holiday calendars, the confirmed
 - The convention table, the risk factors to report against and the meaning of "FX Forward (pts)" are open with the owner.
 - The Pricing DB lists Rates Runs, not a row per line.
 - Snapshots are kept for the life of the process.
-- No client page yet: the line grid, the detail panel and the live bar come next. The leg header that expands its second level needs an ExGrid change (spec of 2026-10-27); until then the toggle sits outside the grid.
+- The leg header itself does not expand its second level: that needs an ExGrid change (spec of 2026-10-27), so the toggle sits outside the grid, and expanding clears the grid's selection (ExGrid ADR-0011).
+- A Price result opens as a Run; it does not fill the line grid's figures, which only live frames do.
+- Per-line risk (the deltas) is in the Run's Risk grid only; the line grid shows PV and the solved quote.
 
 ## Next
 

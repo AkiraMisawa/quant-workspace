@@ -5,6 +5,9 @@ import type { Command } from '../platform/commands/commands';
 import { useWorkspace, useWorkspaceContext } from '../platform/workspace/WorkspaceProvider';
 import type { Panel, WorkspaceState } from '../platform/workspace/workspaceStore';
 import { PricingDbPanel } from './history/PricingDbPanel';
+import { httpRatesApi, type RatesApi } from './rates/api';
+import { ratesCommandsOf } from './rates/commands';
+import { RatesWorkspacePanel } from './rates/RatesWorkspacePanel';
 import { httpXvaApi, type XvaApi } from './xva/api';
 import { priceOf } from './xva/commands';
 import { XvaWorkspacePanel } from './xva/XvaWorkspacePanel';
@@ -14,12 +17,20 @@ import { XvaWorkspacePanel } from './xva/XvaWorkspacePanel';
 
 export const XVA_WORKSPACE = 'xva.workspace';
 export const PRICING_DB = 'history.pricingDb';
+export const RATES_WORKSPACE = 'rates.workspace';
 const NEW_XVA = 'xva.new';
+const NEW_RATES = 'rates.new';
 
 let xvaApi: XvaApi = httpXvaApi;
 /** For tests: the XVA endpoints a page talks to. */
 export function setXvaApi(api: XvaApi): void {
   xvaApi = api;
+}
+
+let ratesApi: RatesApi = httpRatesApi;
+/** For tests: the Rates endpoints a page talks to. */
+export function setRatesApi(api: RatesApi): void {
+  ratesApi = api;
 }
 
 export function AppPanel({ panel }: { readonly panel: Extract<Panel, { kind: 'app' }> }): ReactNode {
@@ -28,6 +39,11 @@ export function AppPanel({ panel }: { readonly panel: Extract<Panel, { kind: 'ap
       const id = panel.params.workspaceId;
       if (id === undefined) throw new Error('An XVA workspace panel names its workspace.');
       return <XvaWorkspacePanel panelId={panel.id} workspaceId={id} api={xvaApi} />;
+    }
+    case RATES_WORKSPACE: {
+      const id = panel.params.workspaceId;
+      if (id === undefined) throw new Error('A Rates workspace panel names its workspace.');
+      return <RatesWorkspacePanel panelId={panel.id} workspaceId={id} api={ratesApi} />;
     }
     case PRICING_DB:
       return <PricingDbPanel panelId={panel.id} />;
@@ -40,6 +56,13 @@ export function appCommands(state: Pick<WorkspaceState, 'showApp' | 'openAppDial
   const active = state.panels.find((p) => p.id === state.activePanelId);
   // Looked up when the command runs: the page registers its Price once it has mounted, after this list is made.
   const xva = active?.kind === 'app' && active.app === XVA_WORKSPACE ? active.id : undefined;
+  const rates = active?.kind === 'app' && active.app === RATES_WORKSPACE ? active.id : undefined;
+  const onRates = (name: 'price' | 'live' | 'capture') => () => {
+    const page = ratesCommandsOf(rates);
+    if (page === undefined) throw new Error(`The Rates workspace in panel ${rates ?? '(none)'} registered no commands.`);
+    page[name]();
+  };
+  const noRates = rates === undefined ? { unavailable: 'No Rates workspace is active.' } : {};
   return [
     {
       id: 'xva.new',
@@ -63,6 +86,17 @@ export function appCommands(state: Pick<WorkspaceState, 'showApp' | 'openAppDial
       },
     },
     {
+      id: 'rates.new',
+      title: 'New Rates workspace',
+      group: 'Rates',
+      keywords: ['irs', 'ccs', 'swap', 'line pricer', 'pv', 'par'],
+      shortcut: 'mod+alt+R',
+      run: () => state.openAppDialog(NEW_RATES),
+    },
+    { id: 'rates.price', title: 'Price Rates workspace', group: 'Rates', keywords: ['pv', 'par', 'run'], ...noRates, run: onRates('price') },
+    { id: 'rates.live', title: 'Start or stop Rates live', group: 'Rates', keywords: ['tick', 'live', 'stream'], ...noRates, run: onRates('live') },
+    { id: 'rates.capture', title: 'Capture Rates live frame', group: 'Rates', keywords: ['save', 'snapshot', 'frame'], ...noRates, run: onRates('capture') },
+    {
       id: 'history.open',
       title: 'Open Pricing DB',
       group: 'History',
@@ -78,9 +112,14 @@ export function AppDialogs() {
   const dialog = useWorkspace((s) => s.appDialog);
   const close = useWorkspace((s) => s.openAppDialog);
   return (
-    <Modal opened={dialog === NEW_XVA} onClose={() => close(undefined)} title="New XVA workspace" trapFocus returnFocus transitionProps={{ duration: 0 }}>
-      {dialog === NEW_XVA && <NewXvaWorkspace onDone={() => close(undefined)} />}
-    </Modal>
+    <>
+      <Modal opened={dialog === NEW_XVA} onClose={() => close(undefined)} title="New XVA workspace" trapFocus returnFocus transitionProps={{ duration: 0 }}>
+        {dialog === NEW_XVA && <NewXvaWorkspace onDone={() => close(undefined)} />}
+      </Modal>
+      <Modal opened={dialog === NEW_RATES} onClose={() => close(undefined)} title="New Rates workspace" trapFocus returnFocus transitionProps={{ duration: 0 }}>
+        {dialog === NEW_RATES && <NewRatesWorkspace onDone={() => close(undefined)} />}
+      </Modal>
+    </>
   );
 }
 
@@ -115,6 +154,36 @@ function NewXvaWorkspace({ onDone }: { readonly onDone: () => void }) {
           data={(registrations.data ?? []).map((r) => ({ value: r.key, label: `${r.key} · ${r.name}` }))} />
         <TextInput label="Value date" type="date" value={valueDate} onChange={(e) => setValueDate(e.currentTarget.value)} />
         <NumberInput label="Existing trades (synthetic)" min={0} max={100000} allowDecimal={false} value={size} onChange={setSize} />
+        <Group justify="flex-end"><Button type="submit" loading={busy}>Create</Button></Group>
+      </Stack>
+    </form>
+  );
+}
+
+function NewRatesWorkspace({ onDone }: { readonly onDone: () => void }) {
+  const workspace = useWorkspaceContext();
+  const [valuationDate, setValuationDate] = useState('2026-10-27');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  const submit = async () => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(valuationDate)) { setError('Choose a valuation date.'); return; }
+    setBusy(true);
+    try {
+      const created = await ratesApi.create(valuationDate);
+      workspace.store.getState().showApp(RATES_WORKSPACE, `Rates ${created.valuationDate}`, { workspaceId: created.workspaceId });
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+      <Stack gap="sm">
+        <TextInput label="Valuation date" type="date" data-autofocus value={valuationDate} error={error} onChange={(e) => setValuationDate(e.currentTarget.value)} />
         <Group justify="flex-end"><Button type="submit" loading={busy}>Create</Button></Group>
       </Stack>
     </form>
