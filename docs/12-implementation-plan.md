@@ -32,6 +32,7 @@ Exit: CO01-CO07; one useful composed screen without a new bespoke Razor page. Do
 - Commit/validate/freeze submission and deterministic asynchronous analytics provider.
 - Run/case/request/attempt metadata, immutable artifacts and RunId diagnostics.
 - Independent Before/After; CRIF prerequisite stub; config splits; individual-addition cases and partial failures.
+- Pricing DB page (`docs/05-execution-history.md` §7): every Run whatever started it, explicit run relations and grouping views, and one domain view active at a time, starting with the XVA projection.
 
 Exit: XV01-XV16 plus EX01-EX10 using deterministic fixtures; active-editor/manual-override and empty-recovery/nocsa acceptance are mandatory.
 
