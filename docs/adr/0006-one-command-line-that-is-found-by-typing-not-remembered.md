@@ -17,10 +17,13 @@ runs out, but every code has to be learned. The owner does not want that.
 
 ## Decision
 
-1. **One command line is the way to every action.** It opens with Ctrl+K from anywhere. Buttons, the command line and
-   the AI reach the same command (ADR-0005), so none of them can do something the others cannot.
-2. **It is not the AI chat.** The AI pane will have slash commands of its own, about the conversation. They are a
-   separate surface: the command line does not converse, and `/` does not open it.
+1. **One command line is the way to every action.** It opens with Ctrl+K from anywhere, and with `/` wherever `/`
+   would not be typed into something (see 2). Buttons, the command line and the AI reach the same command (ADR-0005), so
+   none of them can do something the others cannot.
+2. **It is not the AI chat, and `/` goes where the keyboard is.** The AI pane has slash commands of its own, about the
+   conversation; `/` opens those only while the AI chat's input has the keyboard. Elsewhere `/` opens the command line,
+   except in a text field or a grid, where it is a character the user is typing (a grid cell starts editing with it,
+   as in Excel). Ctrl+K opens the command line from all of these.
 3. **Commands are English words for what they do**: a verb and its object (`price`, `new irs`, `live start`,
    `capture`, `open pricing db`). Nothing has to be known in advance.
 4. **Completion is shown for the command and for each argument.** As the user types, the line lists the commands
@@ -51,8 +54,8 @@ runs out, but every code has to be learned. The owner does not want that.
 
 ## Changed from the proposal
 
-The owner's corrections, 2026-10-27: the command line and the AI chat's slash commands are separate (so `/` no longer
-opens the line); commands are English only, not English and Japanese; completion is shown for commands and arguments
+The owner's corrections, 2026-10-27: the command line and the AI chat's slash commands are separate, and `/` opens
+the AI's only while the chat has the keyboard, the command line elsewhere; commands are English only, not English and Japanese; completion is shown for commands and arguments
 alike; existing chords go now rather than after replacement; no user-defined aliases; an `ai` command is provided.
 
 ## Rejected
