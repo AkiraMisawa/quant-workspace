@@ -68,10 +68,72 @@ Example that raised it (owner's rule, `docs/03-xva-domain.md` §2.4): 8,000 of 3
 reference CSA B and the user changes CSA B's discount curve. Every trade on B whose curve still follows its
 CSA takes the new curve; the server computes it, the grid shows it, and the frozen slice carries it.
 
-## 6. OPEN: how the user's changes are stored
+## 6. Resolved: how the user's changes are stored
 
-The owner wants the server to store what the user changed. Still to decide: whether changes are saved as
-each edit is made (a draft that survives closing the tab) or only with a Run at Price, and whether the
-record is the net change per field (from, to, origin, user, time) or the full ordered history including
-undone edits. Recommended: saved per edit with optimistic concurrency; net change per field with user
-and time; the Run keeps an immutable copy of the changes it priced.
+*(Open on 2026-10-26. Decided with the owner on 2026-10-27.)*
+
+- **Saved per edit, frozen at Price.** Every edit is appended to the workspace's edit log in the
+  database as it is made, so the current state is on the server before any Run exists and survives a
+  closed tab. Price freezes one revision: the Run records the log position it froze, keeps an immutable
+  copy of the changes it priced, and stores the materialised accepted input it sent. The log is
+  append-only; an undo is a new entry.
+- **The log explains, the frozen input reproduces.** Reproducing a Run reads its frozen accepted input
+  and native request artifacts, never a replay of the log.
+- **A counterparty change drops the previous counterparty's edits, after confirmation.** The user is
+  told how many edits of each kind will no longer apply and confirms. The dropped edits stay in the log
+  and in any Run that priced them; bringing them back is an explicit re-apply from a Run or from the log,
+  checked as in section 7. Nothing comes back by itself.
+- **A workspace is made for AI- and workflow-started analyses too.** It holds the plan's contexts, the
+  answers to the AI's choices and the bindings between steps, under the same log and the same freeze.
+- **A trade acquired for another value date is another version.** An existing trade keeps its identity
+  (its source trade ID within the counterparty registration, legal entity included); each acquisition for
+  a value date is a new version of it, as a re-acquired draft trade is a new TradeInput version.
+- **A user may hold several workspaces at once, and a workspace may be deleted.** A Run never depends on
+  its workspace still existing: it carries its frozen input and the copy of the changes it priced.
+
+## 7. OPEN (proposed 2026-10-27): what an edit applies to, and how it carries to new versions
+
+An edit is kept only while it still means what the user meant. Where that cannot be told, the platform
+asks rather than guessing either way.
+
+**What an edit records.** Its target (an identity and a field path), its new value, and its base: the
+source value it overrode and the version that value came from. Editing the same field again replaces the
+value and moves the base to the version current at that edit.
+
+**Scope.** Each kind of edit belongs to one scope, which decides when it stops applying:
+
+| Edit | Examples | Scope |
+|---|---|---|
+| Trade content | A new trade's economic fields | That trade (its TradeInstanceId) |
+| Membership | Before/After on a trade | That trade within the counterparty registration |
+| Assignment | A row's CSA, netting set or discount curve | The counterparty registration |
+| CSA definition | A CSA's curve or terms; a user-created CSA | That CSA, within its agreement |
+| Credit configuration | Recovery, proxy mapping | The counterparty registration |
+
+**New versions of the same scope (a value date change, an explicit refresh).** Each live edit is
+checked against the new version:
+
+1. **Target gone** (a matured trade, a CSA or curve that no longer exists): the edit stops applying and
+   is listed as having no target. It is never moved onto something else.
+2. **Base unchanged** (the new version's source value equals the edit's base): the edit carries over
+   and stays user-owned.
+3. **Base changed** (a fixing landed on a field the user had overridden): a conflict. The row shows the
+   old source value, the new source value and the user's value. The user keeps the edit (its base moves
+   to the new version) or takes the source. The choice is a log entry. An AI-started workspace returns
+   it as a choice; it is never resolved automatically.
+4. **Carried but no longer valid** in the new context (an ineligible CSA, a curve unavailable on the new
+   date): a validation issue, as today.
+
+Fields still automatic follow the new version and their dependencies, with nothing to resolve. After the
+check the workspace says what happened: how many edits carried, conflict, or lost their target.
+
+**Price** is refused while a trade it would price has an unresolved conflict or a lost-target edit not
+acknowledged. Rows outside Before and After do not block it.
+
+**Fields compared together.** A field-by-field comparison misses edits that depend on a neighbour: an
+overridden fixed rate means something else once the source changes the schedule. The domain module
+declares conflict groups, sets of fields compared as one; a source change to any field of a group
+conflicts with an override anywhere in it. Without a declaration a group is the field alone.
+
+**Still to settle:** the conflict groups for each product; whether a user may override a fixing at all;
+and how long a workspace is kept before it may be deleted.

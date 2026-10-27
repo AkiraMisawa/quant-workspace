@@ -179,7 +179,7 @@ Preparation also resolves the applicable configurable baseline/default profile, 
 
 **CONFIRMED (owner, 2026-10-27):** a trade's own data can change with the value date, for example when a fixing has occurred. A value date change therefore re-acquires draft trade inputs too, and each re-acquired trade is a new TradeInput version; a Run already made stays bound to the version it froze.
 
-**OPEN (proposed 2026-10-27):** how a user's edit on a trade carries to its new version. Proposal: an edit records the field and the source value it overrode. Where the new version's source value is unchanged, the edit carries over. Where it changed (a fixing landed on a field the user had overridden), the edit is not applied silently either way; the row shows the conflict and the user keeps the edit or resets the field to the source.
+**OPEN:** how a user's edit carries to a new version, by scope, with conflicts shown rather than resolved silently: proposed in [ADR-0003](adr/0003-client-state-and-the-effective-pricing-input.md) §7. A counterparty change drops the previous counterparty's edits after confirmation (§6, CONFIRMED).
 
 **DEFAULT PROPOSAL:** Retain new draft trade inputs in a staging area across date/counterparty/netting-set changes, but invalidate context-dependent assignments and revalidate before including them in pricing. Replace the existing-trade baseline for the new context. This policy should be explicit in UI copy; it is not permission to carry an old counterparty's existing portfolio into another one.
 
