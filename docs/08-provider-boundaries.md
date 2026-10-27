@@ -144,6 +144,8 @@ A binding should identify provider name, adapter version, engine build/version, 
 | Market source | Seeded fixed snapshots and live synthetic updates | Company market snapshots/feed |
 | Calculation provider | Fake or real OSS Worker | Company service, MQ/HPC, or native Worker |
 
+**Company mapping, PV adjustment (owner, 2026-10-27):** the company `IDataProvider` carries a trade's PV in `/deals/trade_official_pv_table.csv`, and the adjustment applies when `/cfg/xva.csv` registers `xva.enable_pv_adj` as true (`docs/03-xva-domain.md` §2.5). The company adapter writes both from the capability's typed inputs; the composition core and the UI never see these files. Their column layout is not yet specified.
+
 Snapshot the outputs or retain immutable version-addressable references. Looking up a source again at Price time must not silently change accepted inputs.
 
 `TradeInput` exists before a Run and represents an immutable downloaded trade version. Workspace trade rows reference it through stable trade-instance identities. Do not make the current Run folder the only owner of a draft trade needed by later Runs.

@@ -90,6 +90,14 @@ The initial model must allow at least currency, thresholds, MTA, and discount-cu
 - **CONFIRMED (owner, 2026-10-26):** a CSA's discount curve is editable in the client. When the user changes the discount curve of a CSA, every trade that references that CSA and whose curve still follows its CSA takes the new curve automatically, existing trades included. A trade whose curve the user set explicitly keeps it (C05).
 - A CSA or curve that becomes ineligible causes a visible validation issue. Do not silently replace it with another selection.
 
+### 2.5 PV adjustment
+
+**CONFIRMED (owner, 2026-10-27):** with PV adjustment enabled, the engine aligns a trade's initial exposure to its PV and, for some products, decays that adjustment amount over the trade's life to maturity. The engine applies this logic; the platform does not reimplement it. It is applied when the trade's PV is supplied and the adjustment is enabled in the XVA configuration (company mapping: `docs/08-provider-boundaries.md` §7).
+
+The XVA capability therefore takes the PV and the enablement as explicit typed inputs, with the PV's provenance: an official PV from the source, or a PV bound from another Run's or step's retained result. A PV taken from a model valuation is recorded as such and never presented as the official PV.
+
+**OPEN:** which products decay the adjustment, and how; the PV's currency and sign convention; whether a model PV may stand in where an official PV is expected, and what the result is called then; what happens when the flag is on and a trade has no PV (refuse, or price without adjustment and say so).
+
 ## 3. Trade inputs live before and beyond a Run
 
 **CONFIRMED:** Users reuse a tab/workspace and run the same loaded draft trades with different configurations. Downloading a draft trade must not require a Run to exist.
