@@ -18,7 +18,7 @@ public abstract record ActionResult
 /// </summary>
 public sealed class ActionService(CompositionRegistry registry, IDataStore store, RunService runs)
 {
-    public ActionResult Invoke(string actionId, IReadOnlyDictionary<string, JsonNode?> parameters, JsonObject context, string idempotencyKey)
+    public ActionResult Invoke(string actionId, IReadOnlyDictionary<string, JsonNode?> parameters, JsonObject context, string idempotencyKey, string owner)
     {
         var action = registry.FindAction(actionId);
         if (action is null)
@@ -51,7 +51,7 @@ public sealed class ActionService(CompositionRegistry registry, IDataStore store
                 var input = new JsonObject();
                 foreach (var (field, parameter) in run.InputFromParameters) input[field] = parameters[parameter]?.DeepClone();
                 foreach (var (field, value) in Defaults(workflow).Where(d => !input.ContainsKey(d.Key))) input[field] = value;
-                return new ActionResult.Submitted(runs.Submit(new(workflow, context, input, idempotencyKey)));
+                return new ActionResult.Submitted(runs.Submit(new(workflow, context, input, idempotencyKey, owner, RunOrigin.Action, RunRelations.None)));
             }
             default:
                 throw new InvalidOperationException($"Action target {action.Target.GetType().Name} has no handling.");

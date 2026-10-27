@@ -28,7 +28,7 @@ sealed class Harness
 
     public async Task<RunRecord> RunAsync(WorkflowDefinition workflow, JsonObject context, JsonObject input, string? key = null)
     {
-        var result = Runs.Submit(new(workflow, context, input, key ?? Guid.NewGuid().ToString()));
+        var result = Runs.Submit(new(workflow, context, input, key ?? Guid.NewGuid().ToString(), "akira", RunOrigin.Workflow, RunRelations.None));
         var accepted = Assert.IsType<SubmissionResult.Accepted>(result);
         await Runs.Completion(accepted.Run.RunId);
         return Runs.Find(accepted.Run.RunId)!;

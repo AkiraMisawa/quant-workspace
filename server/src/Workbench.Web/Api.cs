@@ -30,8 +30,8 @@ public static class Api
             registry.CapabilityDescriptors, registry.ContractDefinitions, registry.WorkflowDefinitions,
             registry.ViewDefinitions, registry.ActionDefinitions));
 
-        api.MapPost("/runs", (RunRequest request, RunService runs) =>
-            ToResult(runs.Submit(new(request.Workflow, request.Context, request.Input, request.IdempotencyKey))));
+        api.MapPost("/runs", (RunRequest request, RunService runs, CurrentUser user) =>
+            ToResult(runs.Submit(new(request.Workflow, request.Context, request.Input, request.IdempotencyKey, user.Id, RunOrigin.Workflow, RunRelations.None))));
 
         api.MapGet("/runs/{runId}", (string runId, RunService runs) =>
             runs.Find(runId) is { } run ? Results.Ok(run) : NotFound("UnknownRun", $"Run {runId} does not exist."));
@@ -43,8 +43,8 @@ public static class Api
             _ => NotFound("DataUnavailable", $"{reference.DataId}@{reference.Revision} is not retained."),
         });
 
-        api.MapPost("/actions/{actionId}/invoke", (string actionId, ActionRequest request, ActionService actions) =>
-            actions.Invoke(actionId, request.Parameters, request.Context, request.IdempotencyKey) switch
+        api.MapPost("/actions/{actionId}/invoke", (string actionId, ActionRequest request, ActionService actions, CurrentUser user) =>
+            actions.Invoke(actionId, request.Parameters, request.Context, request.IdempotencyKey, user.Id) switch
             {
                 ActionResult.ViewOpened opened => Results.Ok(new { kind = "openView", view = opened.View }),
                 ActionResult.Submitted { Submission: SubmissionResult.Accepted accepted } => Results.Ok(new { kind = "run", run = accepted.Run }),

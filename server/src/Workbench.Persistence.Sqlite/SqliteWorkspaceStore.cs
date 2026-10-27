@@ -18,21 +18,20 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
     // The store's own options: nulls are written, because an empty value and an absent one differ here.
     static readonly JsonSerializerOptions Json = CreateJson();
 
-    readonly string connectionString;
+    readonly SqliteFile file;
     readonly IReadOnlyDictionary<string, SourceResolver> sources;
 
     /// <param name="path">The database file. It is created with its tables when missing.</param>
     /// <param name="sources">For each workspace app, how its source versions are acquired again on load.</param>
     public SqliteWorkspaceStore(string path, IReadOnlyDictionary<string, SourceResolver> sources)
     {
-        connectionString = new SqliteConnectionStringBuilder { DataSource = path, Pooling = true }.ToString();
+        file = new SqliteFile(path);
         this.sources = sources;
-        using var connection = Open();
-        Execute(connection, Schema);
+        using var connection = file.Open();
+        SqliteFile.Execute(connection, Schema);
     }
 
     const string Schema = """
-        PRAGMA journal_mode = WAL;
         CREATE TABLE IF NOT EXISTS Workspace (
             workspace_id TEXT PRIMARY KEY,
             owner_id TEXT NOT NULL,
@@ -65,7 +64,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 
     public void Insert(WorkspaceState state)
     {
-        using var connection = Open();
+        using var connection = file.Open();
         using var transaction = connection.BeginTransaction();
         using (var command = connection.CreateCommand())
         {
@@ -85,7 +84,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 
     public void Commit(WorkspaceState previous, WorkspaceState next, DateTimeOffset at)
     {
-        using var connection = Open();
+        using var connection = file.Open();
         using var transaction = connection.BeginTransaction();
         using (var command = connection.CreateCommand())
         {
@@ -104,7 +103,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 
     public WorkspaceState? Load(string workspaceId)
     {
-        using var connection = Open();
+        using var connection = file.Open();
         string owner, app, contextJson, sourceJson, stateJson;
         using (var command = connection.CreateCommand())
         {
@@ -136,7 +135,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 
     public IReadOnlyList<string> OwnedBy(string owner)
     {
-        using var connection = Open();
+        using var connection = file.Open();
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT workspace_id FROM Workspace WHERE owner_id = $owner AND deleted_at IS NULL ORDER BY updated_at DESC";
         command.Parameters.AddWithValue("$owner", owner);
@@ -148,18 +147,18 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
 
     public void Delete(string workspaceId, DateTimeOffset at)
     {
-        using var connection = Open();
+        using var connection = file.Open();
         using var command = connection.CreateCommand();
         command.CommandText = "UPDATE Workspace SET deleted_at = $at WHERE workspace_id = $id AND deleted_at IS NULL";
         command.Parameters.AddWithValue("$id", workspaceId);
-        command.Parameters.AddWithValue("$at", Text(at));
+        command.Parameters.AddWithValue("$at", SqliteFile.Text(at));
         if (command.ExecuteNonQuery() != 1) throw new WorkspaceRefused("UnknownWorkspace", $"No workspace {workspaceId}.");
     }
 
     /// <summary>The log of one workspace, deleted or not, as it was appended.</summary>
     public IReadOnlyList<EditEntry> Log(string workspaceId)
     {
-        using var connection = Open();
+        using var connection = file.Open();
         return [.. ReadLog(connection, workspaceId)];
     }
 
@@ -175,7 +174,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
             [.. state.Overrides.Values.OrderBy(o => o.Seq)],
             [.. state.Conflicts.Values.OrderBy(c => c.Override.Seq)],
             [.. state.Lost.Values.OrderBy(l => l.Override.Seq)]), Json));
-        command.Parameters.AddWithValue("$at", Text(at));
+        command.Parameters.AddWithValue("$at", SqliteFile.Text(at));
     }
 
     static void Append(SqliteConnection connection, string workspaceId, IEnumerable<EditEntry> entries)
@@ -191,7 +190,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
         {
             parameters["$id"].Value = workspaceId;
             parameters["$seq"].Value = e.Seq;
-            parameters["$at"].Value = Text(e.At);
+            parameters["$at"].Value = SqliteFile.Text(e.At);
             parameters["$user"].Value = e.User;
             parameters["$kind"].Value = e.Kind.ToString();
             parameters["$domain"].Value = (object?)e.DomainKind ?? DBNull.Value;
@@ -232,23 +231,6 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
         }
         return entries;
     }
-
-    SqliteConnection Open()
-    {
-        var connection = new SqliteConnection(connectionString);
-        connection.Open();
-        Execute(connection, "PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
-        return connection;
-    }
-
-    static void Execute(SqliteConnection connection, string sql)
-    {
-        using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.ExecuteNonQuery();
-    }
-
-    static string Text(DateTimeOffset at) => at.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
 
     static JsonSerializerOptions CreateJson()
     {

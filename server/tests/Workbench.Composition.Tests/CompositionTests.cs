@@ -55,13 +55,13 @@ public class CompositionTests
         var row = harness.Dataset(run.Outputs["summary"]).Rows.First(r => r["status"]!.GetValue<string>() == "available");
         var parameters = new Dictionary<string, JsonNode?> { ["readings"] = row["readings"]!.DeepClone() };
 
-        var opened = Assert.IsType<ActionResult.ViewOpened>(harness.Actions.Invoke("sample.showReadings", parameters, Harness.Context(), "a1"));
+        var opened = Assert.IsType<ActionResult.ViewOpened>(harness.Actions.Invoke("sample.showReadings", parameters, Harness.Context(), "a1", "akira"));
         var reference = Assert.IsType<DataReferenceData>(opened.View.Components[0].Data).Reference;
         Assert.Equal(5, harness.Dataset(reference).Rows.Count);
         Assert.Equal(run.Invocations.Count, harness.Runs.Find(run.RunId)!.Invocations.Count);
 
         harness.Store.Expire(reference);
-        var refused = Assert.IsType<ActionResult.Refused>(harness.Actions.Invoke("sample.showReadings", parameters, Harness.Context(), "a2"));
+        var refused = Assert.IsType<ActionResult.Refused>(harness.Actions.Invoke("sample.showReadings", parameters, Harness.Context(), "a2", "akira"));
         Assert.Equal("DataUnavailable", refused.Code);
     }
 
@@ -79,11 +79,11 @@ public class CompositionTests
         Assert.All(harness.Dataset(west.Outputs["summary"]).Rows, r => Assert.StartsWith("ST-0", r["stationId"]!.GetValue<string>()));
         Assert.Equal(["ST-07", "ST-08"], harness.Dataset(west.Outputs["summary"]).Rows.Select(r => r["stationId"]!.GetValue<string>()));
 
-        var missing = harness.Runs.Submit(new(workflow, new JsonObject { ["asOf"] = "2026-10-26" }, new JsonObject { ["days"] = 3 }, "k-missing"));
+        var missing = harness.Runs.Submit(new(workflow, new JsonObject { ["asOf"] = "2026-10-26" }, new JsonObject { ["days"] = 3 }, "k-missing", "akira", RunOrigin.Workflow, RunRelations.None));
         var rejected = Assert.IsType<SubmissionResult.Rejected>(missing);
         Assert.Contains(rejected.Issues, i => i.Code == "ContextUnresolved" && i.Path == "/context/region");
 
-        var invalid = harness.Runs.Submit(new(workflow, Harness.Context(), new JsonObject { ["days"] = 0 }, "k-invalid"));
+        var invalid = harness.Runs.Submit(new(workflow, Harness.Context(), new JsonObject { ["days"] = 0 }, "k-invalid", "akira", RunOrigin.Workflow, RunRelations.None));
         Assert.Contains(Assert.IsType<SubmissionResult.Rejected>(invalid).Issues, i => i.Path == "/input/days");
     }
 
@@ -92,7 +92,7 @@ public class CompositionTests
     {
         var harness = new Harness();
         var result = harness.Actions.Invoke("sample.summariseStation",
-            new Dictionary<string, JsonNode?> { ["stationId"] = "ST-02" }, Harness.Context(), "row-action-1");
+            new Dictionary<string, JsonNode?> { ["stationId"] = "ST-02" }, Harness.Context(), "row-action-1", "akira");
         var accepted = Assert.IsType<SubmissionResult.Accepted>(Assert.IsType<ActionResult.Submitted>(result).Submission);
         await harness.Runs.Completion(accepted.Run.RunId);
         var run = harness.Runs.Find(accepted.Run.RunId)!;
@@ -121,11 +121,11 @@ public class CompositionTests
     {
         var harness = new Harness();
         var workflow = harness.Workflow(Summary);
-        var first = Assert.IsType<SubmissionResult.Accepted>(harness.Runs.Submit(new(workflow, Harness.Context(), new JsonObject { ["days"] = 2 }, "same")));
-        var retry = Assert.IsType<SubmissionResult.Accepted>(harness.Runs.Submit(new(workflow, Harness.Context(), new JsonObject { ["days"] = 2 }, "same")));
+        var first = Assert.IsType<SubmissionResult.Accepted>(harness.Runs.Submit(new(workflow, Harness.Context(), new JsonObject { ["days"] = 2 }, "same", "akira", RunOrigin.Workflow, RunRelations.None)));
+        var retry = Assert.IsType<SubmissionResult.Accepted>(harness.Runs.Submit(new(workflow, Harness.Context(), new JsonObject { ["days"] = 2 }, "same", "akira", RunOrigin.Workflow, RunRelations.None)));
         Assert.Equal(first.Run.RunId, retry.Run.RunId);
 
-        var changed = harness.Runs.Submit(new(workflow, Harness.Context(), new JsonObject { ["days"] = 3 }, "same"));
+        var changed = harness.Runs.Submit(new(workflow, Harness.Context(), new JsonObject { ["days"] = 3 }, "same", "akira", RunOrigin.Workflow, RunRelations.None));
         Assert.Equal("IdempotencyConflict", Assert.IsType<SubmissionResult.Rejected>(changed).Code);
     }
 

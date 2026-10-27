@@ -21,7 +21,6 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 builder.Services.AddSingleton<IWorkbenchModule, SyntheticModule>();
 builder.Services.AddSingleton<IWorkbenchModule, XvaModule>();
 builder.Services.AddSingleton<CompositionRegistry>();
-builder.Services.AddSingleton<IDataStore, InMemoryDataStore>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<RunService>();
 builder.Services.AddSingleton<ActionService>();
@@ -29,6 +28,9 @@ builder.Services.AddSingleton<ActionService>();
 // Workspaces: one SQLite file (D04, C35). Each module registers its edit rules and how its sources are re-acquired.
 var database = Path.GetFullPath(builder.Configuration["Workbench:Database"] ?? Path.Combine(builder.Environment.ContentRootPath, "App_Data", "workbench.db"));
 Directory.CreateDirectory(Path.GetDirectoryName(database)!);
+builder.Services.AddSingleton(_ => new SqliteRunStore(database));
+builder.Services.AddSingleton<IRunStore>(sp => sp.GetRequiredService<SqliteRunStore>());
+builder.Services.AddSingleton<IDataStore>(sp => sp.GetRequiredService<SqliteRunStore>());
 builder.Services.AddSingleton<IWorkspaceStore>(_ => new SqliteWorkspaceStore(database,
     new Dictionary<string, SourceResolver> { [XvaEditRules.App] = XvaSourceVersion.Resolve }));
 builder.Services.AddSingleton(sp => new WorkspaceService(

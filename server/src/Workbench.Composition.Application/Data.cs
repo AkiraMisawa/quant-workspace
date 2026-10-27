@@ -38,17 +38,10 @@ public sealed class InMemoryDataStore : IDataStore
 
     public TypedDataRef Put(string dataId, string contractId, string contractVersion, JsonNode content)
     {
-        // A dataset document names its own reference; the revision is the digest of everything else.
-        var body = content.DeepClone();
-        var isDataset = body is JsonObject { } obj && obj["documentType"]?.GetValue<string>() == "dataset";
-        if (isDataset) ((JsonObject)body).Remove("reference");
-        var revision = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(body.ToJsonString(WireJson.Options))))[..16];
-        var reference = new TypedDataRef(dataId, contractId, contractVersion, revision);
-        if (isDataset) ((JsonObject)body)["reference"] = JsonSerializer.SerializeToNode(reference, WireJson.Options);
-        var json = body.ToJsonString(WireJson.Options);
-        var entry = entries.GetOrAdd((dataId, revision), _ => new Entry(reference, json, false));
+        var (reference, json) = RetainedData.Prepare(dataId, contractId, contractVersion, content);
+        var entry = entries.GetOrAdd((dataId, reference.Revision), _ => new Entry(reference, json, false));
         if (entry.Reference != reference)
-            throw new InvalidOperationException($"Data {dataId}@{revision} is already retained under another contract.");
+            throw new InvalidOperationException($"Data {dataId}@{reference.Revision} is already retained under another contract.");
         return reference;
     }
 
@@ -65,6 +58,23 @@ public sealed class InMemoryDataStore : IDataStore
         if (!entries.TryGetValue((reference.DataId, reference.Revision), out var entry))
             throw new InvalidOperationException($"Cannot expire unknown data {reference.DataId}@{reference.Revision}.");
         entries[(reference.DataId, reference.Revision)] = entry with { Expired = true };
+    }
+}
+
+/// <summary>How every store addresses a value: its revision is the digest of its content.</summary>
+public static class RetainedData
+{
+    /// <summary>The reference a value is retained under, and the JSON to retain.</summary>
+    public static (TypedDataRef Reference, string Json) Prepare(string dataId, string contractId, string contractVersion, JsonNode content)
+    {
+        // A dataset document names its own reference; the revision is the digest of everything else.
+        var body = content.DeepClone();
+        var isDataset = body is JsonObject { } obj && obj["documentType"]?.GetValue<string>() == "dataset";
+        if (isDataset) ((JsonObject)body).Remove("reference");
+        var revision = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(body.ToJsonString(WireJson.Options))))[..16];
+        var reference = new TypedDataRef(dataId, contractId, contractVersion, revision);
+        if (isDataset) ((JsonObject)body)["reference"] = JsonSerializer.SerializeToNode(reference, WireJson.Options);
+        return (reference, body.ToJsonString(WireJson.Options));
     }
 }
 

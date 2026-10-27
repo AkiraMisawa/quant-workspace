@@ -187,6 +187,21 @@ export interface RunRecord {
   readonly error?: OutcomeError;
   readonly acceptedAt: string;
   readonly completedAt?: string;
+  readonly owner: string;
+  readonly origin: RunOrigin;
+  readonly relations: RunRelations;
+}
+
+/** What started a Run (docs/05 §7). */
+export type RunOrigin = 'pricer' | 'ai' | 'workflow' | 'action';
+
+/** A Run's explicit links to related work; never inferred from names or timing. */
+export interface RunRelations {
+  readonly workspaceId?: string;
+  readonly workspaceRevision?: number;
+  readonly parentRunId?: string;
+  readonly analysisGroupId?: string;
+  readonly conversationId?: string;
 }
 
 export interface CompositionIssue {

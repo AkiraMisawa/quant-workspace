@@ -118,13 +118,15 @@ public sealed class FakeXvaPrice : ICapabilityHandler
 /// <summary>Price: freeze the revision the user saw, build its accepted input, retain it, and submit one Run.</summary>
 public static class XvaPrice
 {
-    public static RunSubmission Submission(WorkspaceService workspaces, IDataStore store, string workspaceId, long expectedRevision, string idempotencyKey)
+    public static RunSubmission Submission(WorkspaceService workspaces, IDataStore store, string workspaceId, long expectedRevision, string idempotencyKey,
+        string owner, RunOrigin origin = RunOrigin.Pricer, RunRelations? relations = null)
     {
         var freeze = workspaces.Freeze(workspaceId, expectedRevision, XvaMaterialiser.PricedEntities);
         var input = AcceptedInput.Build(freeze);
         var reference = store.Put($"xva-input-{freeze.WorkspaceId}-r{freeze.Revision}", XvaContracts.AcceptedInput, XvaContracts.Version, input);
         return new RunSubmission(XvaModule.Workflow(reference), freeze.Context,
-            new JsonObject { ["workspaceId"] = freeze.WorkspaceId, ["revision"] = freeze.Revision }, idempotencyKey);
+            new JsonObject { ["workspaceId"] = freeze.WorkspaceId, ["revision"] = freeze.Revision }, idempotencyKey, owner, origin,
+            (relations ?? RunRelations.None) with { WorkspaceId = freeze.WorkspaceId, WorkspaceRevision = freeze.Revision });
     }
 }
 

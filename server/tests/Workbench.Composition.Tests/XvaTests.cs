@@ -69,7 +69,7 @@ public class XvaTests
         ws = Set(service, ws, "trade:DRAFT-1", "csa", "CSA-C");
 
         Assert.NotEmpty(Row(ws, "DRAFT-1").Issues);
-        var refused = Assert.Throws<WorkspaceRefused>(() => XvaPrice.Submission(service, new InMemoryDataStore(), ws.WorkspaceId, ws.Revision, "k1"));
+        var refused = Assert.Throws<WorkspaceRefused>(() => XvaPrice.Submission(service, new InMemoryDataStore(), ws.WorkspaceId, ws.Revision, "k1", "akira"));
         Assert.Equal("InvalidInput", refused.Code);
     }
 
@@ -120,7 +120,7 @@ public class XvaTests
     {
         var store = new InMemoryDataStore();
         var runs = new RunService(new CompositionRegistry([new XvaModule()]), store, TimeProvider.System);
-        var accepted = Assert.IsType<SubmissionResult.Accepted>(runs.Submit(XvaPrice.Submission(service, store, ws.WorkspaceId, ws.Revision, key)));
+        var accepted = Assert.IsType<SubmissionResult.Accepted>(runs.Submit(XvaPrice.Submission(service, store, ws.WorkspaceId, ws.Revision, key, "akira")));
         await runs.Completion(accepted.Run.RunId);
         var run = runs.Find(accepted.Run.RunId)!;
         Assert.Equal(RunStatus.Succeeded, run.Status);
@@ -168,6 +168,6 @@ public class XvaTests
         var seen = ws.Revision;
         Set(service, ws, "trade:DRAFT-1", "notional", 1m);
 
-        Assert.Equal("RevisionMoved", Assert.Throws<WorkspaceRefused>(() => XvaPrice.Submission(service, new InMemoryDataStore(), ws.WorkspaceId, seen, "k1")).Code);
+        Assert.Equal("RevisionMoved", Assert.Throws<WorkspaceRefused>(() => XvaPrice.Submission(service, new InMemoryDataStore(), ws.WorkspaceId, seen, "k1", "akira")).Code);
     }
 }

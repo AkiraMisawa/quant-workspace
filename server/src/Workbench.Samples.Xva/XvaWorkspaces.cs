@@ -30,7 +30,7 @@ public sealed record XvaWorkspaceView(
 /// <summary>An edit held back for the user: a conflict (with the source's new values) or a lost target.</summary>
 public sealed record HeldEdit(string Scope, string Entity, string Field, JsonNode? Value, IReadOnlyDictionary<string, JsonNode?>? Source, bool Acknowledged);
 
-/// <summary>A Run this workspace submitted, newest first.</summary>
+/// <summary>A Run this workspace submitted (its latest twenty, newest first).</summary>
 public sealed record RunLink(string RunId, long Revision);
 
 /// <summary>How many edits a counterparty change would drop, by module edit kind, for the user to confirm.</summary>
@@ -44,8 +44,6 @@ public sealed class XvaWorkspaces(WorkspaceService workspaces, IDataStore store,
 {
     // Effective rows per immutable state: a page request at the same revision does not materialise again.
     readonly ConditionalWeakTable<WorkspaceState, IReadOnlyList<EffectiveTrade>> materialised = new();
-    readonly Lock runGate = new();
-    readonly Dictionary<string, List<RunLink>> runLinks = [];
 
     public static readonly IReadOnlyList<string> SortableColumns =
         ["tradeId", "isNew", "product", "currency", "notional", "maturity", "fixedRate", "schedule", "lastFixing", "csa", "curve", "before", "after"];
@@ -57,9 +55,9 @@ public sealed class XvaWorkspaces(WorkspaceService workspaces, IDataStore store,
     {
         var state = Owned(workspaceId, user);
         var source = Source(state);
-        List<RunLink> links;
-        lock (runGate) links = [.. runLinks.GetValueOrDefault(workspaceId) ?? []];
-        links.Reverse();
+        var links = runs.List(new RunQuery(user, 0, 20, workspaceId)).Runs
+            .Select(r => new RunLink(r.RunId, r.Relations.WorkspaceRevision ?? throw new InvalidOperationException($"Run {r.RunId} names a workspace but no revision.")))
+            .ToList();
         return new(state.WorkspaceId, state.Revision, state.Context, source.Version, source.Registration, source.Agreement,
             XvaMaterialiser.Credit(state), Rows(state).Count, state.Overrides.Count,
             [.. state.Conflicts.Values.OrderBy(c => c.Override.Seq).Select(c => new HeldEdit(c.Override.Target.Scope, c.Override.Target.Entity, c.Override.Target.Field, c.Override.Value, c.Source, false))],
@@ -158,14 +156,7 @@ public sealed class XvaWorkspaces(WorkspaceService workspaces, IDataStore store,
     public SubmissionResult Price(string workspaceId, long revision, string user, string idempotencyKey)
     {
         Owned(workspaceId, user);
-        var result = runs.Submit(XvaPrice.Submission(workspaces, store, workspaceId, revision, idempotencyKey));
-        if (result is SubmissionResult.Accepted accepted)
-            lock (runGate)
-            {
-                var links = runLinks.TryGetValue(workspaceId, out var list) ? list : runLinks[workspaceId] = [];
-                if (!links.Any(l => l.RunId == accepted.Run.RunId)) links.Add(new(accepted.Run.RunId, revision));
-            }
-        return result;
+        return runs.Submit(XvaPrice.Submission(workspaces, store, workspaceId, revision, idempotencyKey, user));
     }
 
     public void Delete(string workspaceId, string user) => workspaces.Delete(workspaceId, user);
