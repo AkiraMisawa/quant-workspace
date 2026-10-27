@@ -34,7 +34,7 @@ responsive at 10,000 and 50,000 existing trades.
   ownership (Source / Automatic / User), the carry check of ADR-0003 §7, and freeze to a Run.
 - Paged effective rows: the server materialises, filters, sorts and pages; the client asks for a window.
 - Run origin and relation links; history projections registered by modules.
-- Stores behind ports, in memory in this slice. A durable store follows once one is chosen (OPEN).
+- Stores behind ports. The edit log and workspaces go to SQLite for the local demonstrator (D04, `contracts/storage.sql`), after an in-memory first cut; the production database stays open.
 
 **Client**
 - A workspace panel: context bar for value date and counterparty registration, the existing and new
@@ -56,4 +56,4 @@ responsive at 10,000 and 50,000 existing trades.
 ## Out of scope
 
 Real engines, CRIF, MQ and HPC dispatch, MVA and SIMM (next), individual-addition iteration (XV10),
-durable storage, authentication, AI.
+the production database, authentication, AI.
