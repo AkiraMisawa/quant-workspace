@@ -37,6 +37,9 @@ public sealed class CompositionValidator(CompositionRegistry registry)
                 yield return new("DuplicateStep", $"/steps/{i}/stepId", $"Step id {step.StepId} is used twice.");
             if (descriptor is null)
                 yield return new("UnknownCapability", $"/steps/{i}/capabilityId", $"Capability {step.CapabilityId}@{step.CapabilityVersion} is not registered.");
+            else if (descriptor.IsCommand())
+                yield return new("CommandAsStep", $"/steps/{i}/capabilityId",
+                    $"{step.CapabilityId} edits a workspace or runs a subscription; it is invoked for a caller, not as a workflow step.");
         }
 
         foreach (var (step, descriptor, i) in steps.Values)

@@ -61,11 +61,16 @@ public enum EditKind
     TakeSource,
     AcknowledgeLost,
     DropScope,
+    Create,
+    Remove,
+    Derive,
 }
 
 /// <summary>
 /// One entry of the append-only edit log. An undo is a new entry, never a removal. <c>DomainKind</c> names
-/// the module's edit kind (for example <c>xva.assignment</c>), so one log holds every domain's edits.
+/// the module's edit kind (for example <c>xva.assignment</c>), so one log holds every domain's edits. <c>Origin</c>
+/// says where the edit came from (the page, the AI acting for the user; ADR-0005); null where the caller did not
+/// state it, and on entries written before origins were recorded.
 /// </summary>
 public sealed record EditEntry(
     long Seq,
@@ -75,7 +80,8 @@ public sealed record EditEntry(
     string? DomainKind,
     EditTarget? Target,
     JsonNode? Value,
-    string? Note);
+    string? Note,
+    RunOrigin? Origin = null);
 
 /// <summary>What a module declares about its edits: which fields are compared together.</summary>
 public interface IEditRules
@@ -85,6 +91,39 @@ public interface IEditRules
 
     /// <summary>The fields compared as one with this target's field. Must include the field itself.</summary>
     IReadOnlyList<string> ConflictGroup(EditTarget target);
+
+    /// <summary>
+    /// The sources this module derives from the workspace's own values (ADR-0004), by derivation scope. A pure
+    /// function of the state, run again after every accepted command and after a load; an override whose
+    /// target scope is a derivation scope is read against that scope's source. Most modules derive nothing.
+    /// </summary>
+    IReadOnlyDictionary<string, ISourceVersion> Derive(WorkspaceState state) => NoDerivations;
+
+    static readonly IReadOnlyDictionary<string, ISourceVersion> NoDerivations = new Dictionary<string, ISourceVersion>();
+}
+
+/// <summary>
+/// An entity the workspace itself holds, because the user created it (ADR-0004). Its initial field values act
+/// as its source values: an edit on it is an override with that base, as on an acquired entity.
+/// </summary>
+public sealed record CreatedEntity(string Scope, string Entity, JsonObject Fields, long Seq);
+
+/// <summary>A created entity read as a source version, so the carry check and overrides treat it as any other.</summary>
+public sealed class CreatedSource(CreatedEntity created) : ISourceVersion
+{
+    public string Version { get; } = $"created:{created.Seq}";
+    public JsonObject Descriptor => new() { ["created"] = created.Entity };
+
+    public SourceValue? Read(string entity, string field) =>
+        entity == created.Entity && created.Fields.TryGetPropertyValue(field, out var value) ? new SourceValue(value?.DeepClone()) : null;
+}
+
+/// <summary>A derivation scope that no longer exists: every override in it has lost its target.</summary>
+public sealed class EmptySource(string version) : ISourceVersion
+{
+    public string Version { get; } = version;
+    public JsonObject Descriptor => [];
+    public SourceValue? Read(string entity, string field) => null;
 }
 
 /// <summary>Each field is its own group: the default when a module declares nothing.</summary>

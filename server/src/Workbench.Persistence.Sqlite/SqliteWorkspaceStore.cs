@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Microsoft.Data.Sqlite;
+using Workbench.Composition.Application;
 using Workbench.Composition.Application.Workspaces;
 
 namespace Workbench.Persistence.Sqlite;
@@ -29,6 +30,15 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
         this.sources = sources;
         using var connection = file.Open();
         SqliteFile.Execute(connection, Schema);
+        AddOriginColumn(connection);
+    }
+
+    /// <summary>A log written before edits recorded their origin (ADR-0005) gains the column; its entries keep none.</summary>
+    static void AddOriginColumn(SqliteConnection connection)
+    {
+        using var probe = connection.CreateCommand();
+        probe.CommandText = "SELECT COUNT(*) FROM pragma_table_info('EditLog') WHERE name = 'origin'";
+        if ((long)probe.ExecuteScalar()! == 0) SqliteFile.Execute(connection, "ALTER TABLE EditLog ADD COLUMN origin TEXT");
     }
 
     const string Schema = """
@@ -57,6 +67,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
             field TEXT,
             value_json TEXT CHECK (value_json IS NULL OR json_valid(value_json)),
             note TEXT,
+            origin TEXT,
             PRIMARY KEY (workspace_id, seq)
         );
         CREATE INDEX IF NOT EXISTS ix_editlog_domain ON EditLog(domain_kind, at);
@@ -130,7 +141,10 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
             state.Overrides.ToImmutableDictionary(o => o.Target),
             state.Conflicts.ToImmutableDictionary(c => c.Override.Target),
             state.Lost.ToImmutableDictionary(l => l.Override.Target),
-            [.. ReadLog(connection, workspaceId)]);
+            [.. ReadLog(connection, workspaceId)])
+        {
+            Created = (state.Created ?? []).ToImmutableDictionary(c => c.Entity),
+        };
     }
 
     public IReadOnlyList<string> OwnedBy(string owner)
@@ -162,7 +176,9 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
         return [.. ReadLog(connection, workspaceId)];
     }
 
-    sealed record StoredState(IReadOnlyList<Override> Overrides, IReadOnlyList<Conflict> Conflicts, IReadOnlyList<LostTarget> Lost);
+    // Created is absent from states stored before ADR-0004, which created nothing.
+    sealed record StoredState(IReadOnlyList<Override> Overrides, IReadOnlyList<Conflict> Conflicts, IReadOnlyList<LostTarget> Lost,
+        IReadOnlyList<CreatedEntity>? Created = null);
 
     static void Bind(SqliteCommand command, WorkspaceState state, DateTimeOffset at)
     {
@@ -173,7 +189,8 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
         command.Parameters.AddWithValue("$state", JsonSerializer.Serialize(new StoredState(
             [.. state.Overrides.Values.OrderBy(o => o.Seq)],
             [.. state.Conflicts.Values.OrderBy(c => c.Override.Seq)],
-            [.. state.Lost.Values.OrderBy(l => l.Override.Seq)]), Json));
+            [.. state.Lost.Values.OrderBy(l => l.Override.Seq)],
+            [.. state.Created.Values.OrderBy(c => c.Seq)]), Json));
         command.Parameters.AddWithValue("$at", SqliteFile.Text(at));
     }
 
@@ -181,10 +198,10 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO EditLog (workspace_id, seq, at, user_id, kind, domain_kind, scope, entity, field, value_json, note)
-            VALUES ($id, $seq, $at, $user, $kind, $domain, $scope, $entity, $field, $value, $note)
+            INSERT INTO EditLog (workspace_id, seq, at, user_id, kind, domain_kind, scope, entity, field, value_json, note, origin)
+            VALUES ($id, $seq, $at, $user, $kind, $domain, $scope, $entity, $field, $value, $note, $origin)
             """;
-        var parameters = new[] { "$id", "$seq", "$at", "$user", "$kind", "$domain", "$scope", "$entity", "$field", "$value", "$note" }
+        var parameters = new[] { "$id", "$seq", "$at", "$user", "$kind", "$domain", "$scope", "$entity", "$field", "$value", "$note", "$origin" }
             .ToDictionary(n => n, n => command.Parameters.Add(n, SqliteType.Text));
         foreach (var e in entries)
         {
@@ -198,9 +215,10 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
             parameters["$entity"].Value = (object?)e.Target?.Entity ?? DBNull.Value;
             parameters["$field"].Value = (object?)e.Target?.Field ?? DBNull.Value;
             // A value set to empty is the JSON literal null; a NULL column means the entry carries no value.
-            parameters["$value"].Value = e.Kind is EditKind.Set or EditKind.KeepOverride || e.Value is not null
+            parameters["$value"].Value = e.Kind is EditKind.Set or EditKind.KeepOverride or EditKind.Create || e.Value is not null
                 ? (e.Value?.ToJsonString() ?? "null") : DBNull.Value;
             parameters["$note"].Value = (object?)e.Note ?? DBNull.Value;
+            parameters["$origin"].Value = (object?)e.Origin?.ToString() ?? DBNull.Value;
             command.ExecuteNonQuery();
         }
     }
@@ -209,7 +227,7 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT seq, at, user_id, kind, domain_kind, scope, entity, field, value_json, note
+            SELECT seq, at, user_id, kind, domain_kind, scope, entity, field, value_json, note, origin
             FROM EditLog WHERE workspace_id = $id ORDER BY seq
             """;
         command.Parameters.AddWithValue("$id", workspaceId);
@@ -227,7 +245,8 @@ public sealed class SqliteWorkspaceStore : IWorkspaceStore
                 Text(4),
                 target,
                 Text(8) is { } json ? JsonNode.Parse(json) : null,
-                Text(9)));
+                Text(9),
+                Text(10) is { } origin ? Enum.Parse<RunOrigin>(origin) : null));
         }
         return entries;
     }

@@ -20,6 +20,8 @@ public static class Api
 
     public sealed record ActionRequest(IReadOnlyDictionary<string, JsonNode?> Parameters, JsonObject Context, string IdempotencyKey);
 
+    public sealed record CommandRequest(JsonObject Inputs, string IdempotencyKey);
+
     public sealed record ViewValidationRequest(ViewDefinition View, IReadOnlyList<string> BoundNames);
 
     public sealed record HistoryRequest(string? Domain, int Start, int Count);
@@ -53,6 +55,23 @@ public static class Api
                 ActionResult.Submitted { Submission: SubmissionResult.Rejected rejected } => Rejected(rejected.Code, rejected.Issues),
                 ActionResult.Refused refused => Rejected(refused.Code, refused.Issues),
                 _ => throw new InvalidOperationException("Unhandled action result."),
+            });
+
+        // Commands (ADR-0005), as the agent's tool calls reach them: the caller is the signed-in user, acting through
+        // the AI. The fixed pages keep their own endpoints, which call the same application services as the pricer.
+        api.MapPost("/agent/commands/{capabilityId}/{version}", async (string capabilityId, string version, CommandRequest request,
+            CommandService commands, CurrentUser user, CancellationToken cancellationToken) =>
+            await commands.InvokeAsync(capabilityId, version, request.Inputs, new Caller(user.Id, RunOrigin.Ai), request.IdempotencyKey, cancellationToken) switch
+            {
+                CommandResult.Done done => Results.Ok(new { capabilityId = done.CapabilityId, version = done.Version, outputs = done.Outputs }),
+                CommandResult.Refused { Code: "UnknownCapability" or "UnknownWorkspace" } refused =>
+                    Results.Json(new ErrorEnvelope(refused.Code, refused.Issues[0].Message, refused.Issues), statusCode: 404),
+                CommandResult.Refused { Code: "NotOwner" } refused =>
+                    Results.Json(new ErrorEnvelope(refused.Code, refused.Issues[0].Message, refused.Issues), statusCode: 403),
+                CommandResult.Refused { Code: "RevisionMoved" } refused =>
+                    Results.Json(new ErrorEnvelope(refused.Code, refused.Issues[0].Message, refused.Issues, Retryable: true), statusCode: 409),
+                CommandResult.Refused refused => Rejected(refused.Code, refused.Issues),
+                _ => throw new InvalidOperationException("Unhandled command result."),
             });
 
         // The Pricing DB. Until roles arrive with sign-in (C30, C31), a user sees their own Runs only.

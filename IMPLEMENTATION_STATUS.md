@@ -15,13 +15,13 @@ Plan: [docs/plans/slice-01-generic-workbench.md](docs/plans/slice-01-generic-wor
   - Runs with idempotency keys, retained typed data references, and registered row actions (`openView`, `runWorkflow`).
   - HTTP API: catalog, runs, data read, action invoke, and definition validation.
 - **Client** (`client/`):
-  - A command palette (Ctrl/⌘+K). Its commands come from the catalog, so a registered workflow appears without a client change.
+  - The command line (Ctrl/⌘+K, or `/` outside a text field or grid; ADR-0006). Commands are English words (`run station summary`, `set region South`); those from the catalog appear without a client change.
   - A context bar that keeps the last valid context in force.
   - A run dialog generated from the input contract.
   - Panels per Run or per opened view.
   - Declarative views rendered through ExGrid, with row actions in an ExGrid Action Column.
   - Light and dark themes.
-  - Keyboard shortcuts for focus grid, next/previous panel, close panel and theme.
+  - Shell keys only: focus grid, edit context, next/previous panel, close panel (ADR-0006 §8). The theme is the `toggle theme` command.
 - **Sample module**: four synthetic capabilities (stations, readings, summary). They are non-financial on purpose, to show that the kernel knows nothing of XVA.
 
 ### Verification performed
@@ -75,7 +75,7 @@ Plan: [docs/plans/slice-02-xva-workspace.md](docs/plans/slice-02-xva-workspace.m
 - **Synthetic XVA module** (`Workbench.Samples.Xva`): three registrations (two share code ABC under different legal entities), agreements with CSAs and one uncollateralised (`nocsa_MA-003`), up to 100,000 generated existing trades per counterparty (matured ones are absent at a later date, and the last fixing moves with the date), three draft trades that belong to no counterparty, an empty CVA recovery on LE-01. The rules: a new trade takes the main CSA, a curve follows its CSA (including a CSA curve edit) unless the user set it, an uncollateralised trade starts on the profile curve, an ineligible CSA is an issue on the row and Price refuses it. A simulated CVA/FVA provider prices Before and After independently and falls back to the CDS recovery when the CVA recovery is empty.
 - **HTTP**: `/api/xva/...` creates a workspace, pages effective rows (sorted on the server, Blank last as ExGrid's ADR-0023), edits, resolves held edits, moves the value date, previews and confirms a counterparty change, prices and deletes. `/api/history/...` serves the Pricing DB.
 - **Pricing DB**: every Run newest first; a module registers a history projection; the XVA view adds value date, registration, trade counts, CVA and FVA Before, After and incremental. An unknown domain is refused.
-- **Client**: the XVA workspace page (ExGrid over a fetching source with a Row Key; user-set, held and invalid cells painted as Cell States with their reasons; a counterparty change that shows what it drops by edit kind and asks first; Price as a button and the `Price XVA workspace` command) and the Pricing DB page (one domain at a time, `Open` opens a Run). `New XVA workspace` (Ctrl+Alt+N), `Open Pricing DB` (Ctrl+Alt+H) and `Price XVA workspace` (Ctrl+Alt+P) are palette commands.
+- **Client**: the XVA workspace page (ExGrid over a fetching source with a Row Key; user-set, held and invalid cells painted as Cell States with their reasons; a counterparty change that shows what it drops by edit kind and asks first; Price as a button and the `Price XVA workspace` command) and the Pricing DB page (one domain at a time, `Open` opens a Run). `new xva`, `open pricing db` and `price` are commands (their chords were removed by ADR-0006).
 
 ### Verification performed
 
@@ -121,6 +121,117 @@ Every provider is simulated and every figure synthetic, labelled `simulated` in 
 - Requests act as one configured demo user (`Workbench:DemoUser`) until ME-ID sign-in (C30); roles (C31) are not enforced, so a user sees only their own Runs.
 - Run views are matched to Runs by output name, not by contract.
 - Touch waits for ExGrid's touch release (C36).
+
+## Slice 03: the Rates line pricer
+
+Plan: [docs/plans/slice-03-rates-line-pricer.md](docs/plans/slice-03-rates-line-pricer.md). Decisions: C37 to C43 in `docs/00-decisions.md`, ADR-0004 (accepted 2026-10-27).
+
+### What runs
+
+- **Kernel (ADR-0004)**: entities the user creates (`Create`, `Remove`), sources a module derives from the workspace (`IEditRules.Derive`, one scope per line), a Derive log entry with its carry summary whenever a derived source moves, and derivation again on load.
+- **Rates module** (`Workbench.Samples.Rates`): a line's flat fields (C40, C43) read into typed terms; a resolver that refuses what it cannot honour on the row; a standard schedule generator; a schedule per line as a derived source whose periods are identified by leg and unadjusted dates, so cashflow edits carry, conflict or are lost when the terms move.
+- **Pricing**: `IRatesPricingProvider` with the fake provider (`fake-rates/1`, every figure `simulated`): PV, the par rate or fair spread of the leg left without a quote, and 1bp pillar deltas when the row asks for risk, standing in for the engine's AD sensitivities (C38). A seeded synthetic market whose snapshot n is a function of its configuration.
+- **Price** (`rates.price`): freezes the revision the user saw, prices its priceable lines against the snapshot the request names (an unknown one is refused), lists every other line as `notPriced` with its reasons, and refuses when nothing is priceable. One Run per Price.
+- **Live**: subscriptions price the newest market with at most one calculation in flight and the newest update waiting; an accepted edit moves a subscription to its revision; a frame names its subscription revision, input revision and snapshot. No Run per tick. Frames stream as server-sent events. A workspace has one subscription on the server; pages attach to it (a new page first hears the frame shown now) and detach when they go. Once nobody has watched it for `Rates:LiveIdleStopSeconds` (300 by default), the next tick stops it and the workspace records why; a page opening on it then shows the last frame and offers Resume, which starts a new subscription on the current revision (owner, 2026-10-27).
+- **Capture** (`rates.capture`): saves the frame the user saw as a Run, with its own snapshot, refused (`FrameMoved`) when another frame is shown by then.
+- **Commands (ADR-0005, accepted 2026-10-27)**: the kernel's `EditWorkspace` and `Subscribe` effects mark a capability as a command, invoked through `CommandService` for a `Caller` the server sets (user and origin), outside Runs, with an idempotency key (held in memory); the validator refuses a command as a workflow step. Edit log entries record their origin (a nullable `origin` column, added to an older log on open). The Rates commands are `rates.line.create` (one line from the grid's own terms, in a workspace of the caller's or a new one at the valuation date given; every missing term refused by name, any reason the line could not be priced refused before anything is written), `rates.live.start` (starts or joins the workspace's subscription) and `rates.live.stop`; the live status says whether the page or the AI started and stopped it. They are reached at `POST /api/agent/commands/{capability}/{version}`, the route the agent's tool calls take, with origin `ai`; no agent runtime calls it yet.
+- **HTTP**: `/api/rates/market`, `/api/rates/workspaces/...` (create, view, add, edit, remove a line, cashflows and cashflow edits, resolutions, valuation date, price, start live, delete), `/api/rates/live/{id}/frames|capture`.
+- **Pricing DB**: the Rates view lists one row per Run: valuation date, price or capture, snapshot, lines priced, failed and not priced, execution mode.
+- **Client**: the Rates page (`new rates`). One ExGrid row per line, keyed by line, with Header Groups over Result, Trade, Leg 1, Leg 2 and Terms; the line and its actions (Cashflows, Remove) are pinned. Cells the user set, held edits, lines that cannot be priced and figures of an older revision are painted as Cell States with their reasons. Each leg's second level (C43) opens and closes from a button beside the grid, and the group's caption says which. Cashflows opens a second ExGrid over the line's periods, whose dates, notional and rate are editable, with its notional exchanges below. Start live and Stop live, Capture, and Price (against the snapshot shown) are buttons and the commands `price`, `live start`, `live stop` and `capture`. The edit queue the XVA page used is now generic and shared.
+- **Configuration**: convention profiles and the synthetic market are configuration (`Rates` section). None is configured by default. `appsettings.Development.json` carries the convention table proposed on 2026-10-27, still unconfirmed, on a weekends-only calendar: its profile version says `unconfirmed` and every row names its profiles.
+
+### Verification performed
+
+| Suite | Result |
+|---|---|
+| `dotnet test server/Workbench.slnx` | 130 passed (the 8 command tests of ADR-0005 included) |
+| `dotnet run` (Development) | Started; `/api/rates/market` advanced with the ticker |
+| `npm test` (Vitest) | 28 passed |
+| `npx playwright test` (Chromium, headless, Linux) | 9 passed; the Rates spec again after the commands (2 passed) |
+
+| Acceptance | Status |
+|---|---|
+| A line typed by keyboard prices live, captures and prices once (C40, docs/07 §3) | Passed (Playwright) |
+| Manual and live agree on the same input and market (docs/07 acceptance 4) | Passed (xUnit) |
+| An edit moves the live subscription to its revision; capture refuses a frame no longer shown (spine 6) | Passed (xUnit) |
+| Cashflow edits carry, conflict or are lost when terms move (ADR-0004) | Passed (xUnit). Not yet driven in the browser. |
+| The AI's commands create a priceable line, refuse missing terms by name, join the page's subscription and are logged as the AI's (ADR-0005) | Passed (xUnit, over HTTP). No agent runtime drives them yet. |
+| Touch, tablet and phone layouts | Not verified; waits for ExGrid's touch release (C36) |
+
+### Providers
+
+The provider and the market are simulated. Real holiday calendars, the confirmed convention table and a real worker are not wired.
+
+### Known limits
+
+- The convention table, the risk factors to report against and the meaning of "FX Forward (pts)" are open with the owner.
+- The Pricing DB lists Rates Runs, not a row per line.
+- Snapshots are kept for the life of the process.
+- A collapsed leg whose hidden columns hold a value the user set says so in its caption (`Leg 1 ▸ ●`); the values are priced whether shown or not.
+- The leg header itself does not expand its second level: that needs an ExGrid change (spec of 2026-10-27), so the toggle sits outside the grid, and expanding clears the grid's selection (ExGrid ADR-0011).
+- A Price result opens as a Run; it does not fill the line grid's figures, which only live frames do.
+- Per-line risk (the deltas) is in the Run's Risk grid only; the line grid shows PV and the solved quote.
+- A command's idempotency keys live for the process: a retry after a restart acts again.
+- A line the AI creates holds its terms as the line's own values, so the page does not mark them as the user's edits; the log says they came from the AI.
+
+## The command line (ADR-0006, accepted 2026-10-27)
+
+### What runs
+
+- One command line, opened with Ctrl+K anywhere and with `/` where `/` would not be typed (not in a text field, a grid, or the AI chat, whose slash commands are its own). Commands are English words for what they do; typing shows the matching commands, best first: words typed in full, words that start with the query, words whose starts follow the query in order (`op pr` → `open pricing db`), then words or titles that contain it. Among equal matches what the user ran most and lately comes first, so a few letters find it; `?` lists what can run now.
+- Each command shows what it acts on (the active panel) and why it cannot run if it cannot. A chosen command shows its arguments as slots: required ones in order, optional ones as `name=value`. The slot being typed lists its valid values; Tab takes one, Enter runs, and Enter with a slot missing names it and runs nothing.
+- `new irs <currency> <index> <end> <notional> <direction> <fixed-frequency> <float-frequency> [rate=] [spread=]` makes a line in the active Rates workspace in one edit, at the revision the page saw (`POST /api/rates/workspaces/{id}/lines/terms`); currency and index complete from the configured conventions (`GET /api/rates/conventions`), the end, direction and frequencies from what the grid accepts, and a notional may be written `3bn` or `500m`. `add line <irs|ccs>`, `price` (XVA or Rates, by the active panel), `live start`, `live stop`, `capture`, `new xva`, `new rates`, `open pricing db`, `run <workflow>`, `show <view>`, `set <context field> <value>`, `toggle theme`.
+- `ai <request>` is a command, and Enter on a line that matches no command asks the AI with what was typed (the AI pane below).
+- Domain chords (New XVA, Price XVA, New Rates, Pricing DB, theme) are gone.
+
+### Verification performed
+
+| Suite | Result |
+|---|---|
+| `npm test` (Vitest) | 36 passed (ranking, slot reading, completion, missing arguments, the AI's rest-of-line) |
+| `dotnet test server/Workbench.slnx` | 131 passed (the terms endpoint at the page's revision, logged as the page's) |
+| `npx playwright test` (Chromium, headless, Linux) | 10 passed; the new command-line test and the two rewritten ones with `--repeat-each=3` (9 passed) |
+
+### Known limits
+
+- Frequency ranking is kept in the browser until the user settings store arrives with sign-in (C30).
+- `new ccs` with terms is not there yet: `add line ccs` adds an empty line to fill in the grid.
+- New XVA and New Rates still open their dialogs rather than taking their arguments on the line.
+
+## The AI pane (ADR-0007, proposed 2026-10-27)
+
+### What runs
+
+- **AG-UI** (`Workbench.Agent`, `/api/agent/...`): the pane posts AG-UI's `RunAgentInput` to `POST /api/agent/runs` and reads the run's events as server-sent events, in the shapes of `@ag-ui/core` 1.0.3 (protocol 1.0). The server holds the conversation per thread and owner and takes only new user messages from the client; frontend tools and client-written history are refused. A run goes on when its reader leaves; `GET /api/agent/threads/{t}/runs/{r}/events?after=n` reads the rest, `GET /api/agent/threads/{t}` reads the messages, `POST …/cancel` stops a run before its next tool call. The same run id posted again is read again, never run twice. An agent run is not a workbench Run.
+- **Tools**: one per registered command capability (ADR-0005), named by its id with `_` (`rates_line_create`), whose parameters are its input contracts. A call goes through `CommandService` for `Caller(user, ai)` with the key `agent:{thread}:{toolCall}`; its result is the outputs or every issue of the refusal.
+- **Runtime port** `IAgentRuntime`, chosen by `Agent:Runtime`; anything but a configured runtime stops startup. The only runtime is `scripted` (**no model**, labelled `scripted · no model` in the pane and on every card): modules register the requests it understands. Rates registers an IRS from the terms a request writes (currency, index, end, notional, direction, `fixed 12m float 3m`, `rate 1.2%` or `spread 0`, a valuation date or the open workspace), `start ticking` and `stop ticking`. It fills only stated terms (an index names its currency), stops at a refusal and asks for what it names; the answer is joined to the refused request unless it asks for that thing afresh, so "pay fixed, fixed 12m float 12m, spread 0 and start ticking" completes the swap and ticks it.
+- **Copilot runtime** (`Agent:Runtime=copilot`, C44, C46): `CopilotAgentRuntime` posts each turn to the **agent host** (`Workbench.AgentHost`, a process of its own on `127.0.0.1:5395`, behind a shared key) and reads its answer as JSON lines (words, a tool call, the end, a failure); each call is invoked by the loop for the user and its result posted back, and cancelling a run aborts the host's turn. The host runs `GitHub.Copilot.SDK` 1.0.27 (CLI 1.0.104) in its empty mode: no built-in tool, only the workbench's tools, every other permission rejected, one session per thread. Its token comes from its own environment or a file; the workbench is started without it. `tools/run-with-copilot.sh` starts both, optionally with the host as another OS user; `docs/running-with-copilot.md` says how, and how to reach it over Tailscale.
+- **Client** (`client/src/ai/`): the AI pane on the right (a full-screen drawer below 768 px), one card per request with each tool call, its outcome and the reply, a runtime badge, and the chat input with its own `/` commands (`/new`, `/stop`, `/help`, `/close`; the command line's `/` stays out of the chat). `ai <request>` and `open ai pane` / `close ai pane` are commands, and the header has an AI button. The active panel's app gives the context (an open Rates workspace); a result's app effect opens the workspace a new line is in **behind** the active panel, with a Show button on the card, and refreshes what live start and stop changed. Nothing the AI does moves the keyboard.
+
+### Verification performed
+
+| Suite | Result |
+|---|---|
+| `dotnet test server/Workbench.slnx` | 145 passed (7: commands through AG-UI, asking for missing terms and completing them, read again rather than run twice, client tools and history refused, an invented tool refused, cancel, an unknown runtime stops startup; 7 for Copilot with a fake model behind the real host: a model's call runs as the user's command, the conversation goes with each turn, an invented tool is refused back to the model, cancel aborts the model's turn, a model failure ends the run with its message, the host refuses a caller without the key and will not start without one, `copilot` without its settings stops startup) |
+| `tools/run-with-copilot.sh` in the container | The host and the workbench start; the SDK's runtime starts; a run with a made-up token ends in `RUN_ERROR` carrying the SDK's message ("No GitHub OAuth token or Copilot HMAC key provided"). No real model was reached. |
+| `npm test` (Vitest) | 42 passed (6 new: cards from events, a failed run, the request sent alone with its context, an effect applied once, busy refusals, chat commands) |
+| `npx playwright test` (Chromium, headless, Linux) | 13 passed; the three AI tests with `--repeat-each=3` (9 passed). Every event of a run is parsed with `@ag-ui/core`'s own schemas. |
+
+| Acceptance | Status |
+|---|---|
+| AI01 (real agent) | Not met yet: the Copilot runtime is built, but no real model has answered through it (needs the owner's token, on the owner's machine). |
+| AI04 (reconnect) | Application part passed (xUnit: a run is read again and from a position, never run twice). A browser reconnect is not tested. |
+| AI06 (no unregistered path) | Passed for tools (xUnit: client tools refused, an invented tool refused without running). Views are not generated by the agent yet. |
+
+### Known limits
+
+- The Copilot runtime has not met a real model. With a made-up token the SDK reports "No GitHub OAuth token or Copilot HMAC key provided"; whether a real fine-grained token gets past that is the first thing to check on the owner's machine.
+- The company's GitHub App (C45) is not wired: its hour-long installation token would need the host's SDK client restarted to refresh.
+- The SDK's session lives in the host's memory; a host restart starts a new session, told the conversation so far as text.
+- Threads and runs are held in memory; a restart loses them (the commands' effects are in the workspace log as before).
+- A tool result card shows the command's outputs as JSON.
+- The agent cannot run workflows (Runs) or read data yet; it has the three Rates commands.
+- XVA registers no command, so the agent cannot act on an XVA workspace.
 
 ## Next
 

@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@mantine/core/styles.css';
-import '@mantine/spotlight/styles.css';
 import '../../vendor/ex-grid/ex-grid.min.css';
 import './theme.css';
 import { App } from './App';

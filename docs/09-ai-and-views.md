@@ -4,7 +4,7 @@
 
 | Participant | Responsibility |
 |---|---|
-| Blazor AI workspace | Conversation, structured choices, editable inputs, progress and result views |
+| AI pane (React, [ADR-0007](adr/0007-the-ai-pane-speaks-ag-ui-to-a-replaceable-agent-that-calls-commands.md)) | Conversation, structured choices, editable inputs, progress and result views |
 | UI-agent transport adapter | AG-UI-compatible event exchange and reconnect/turn identity |
 | Agent runtime adapter | Model interaction, tool proposals and conversation state |
 | Application tool gateway | Authenticated capability discovery, validation, binding and execution |
@@ -56,7 +56,7 @@ Show concise actions, selected assumptions and execution progress. Do not expose
 
 ## Execution policy
 
-Initial scope is read-only analytics. Server-side policy governs capability availability, data access, provider selection and resource limits. Agent-supplied identity/permissions are ignored. Booking, position mutation and external quoting are separate future capabilities with their own rules. Do not insert generic approval dialogs for already resolved ordinary analytics; prompt for material ambiguity or a policy-required action only.
+Initial scope is read-only analytics, and editing the caller's own workspaces and live subscriptions through command capabilities ([ADR-0005](adr/0005-commands-capabilities-that-edit-a-workspace-or-run-a-subscription.md)): invoked for the server's caller outside Runs, never as workflow steps, refusing missing terms by name instead of filling defaults. Server-side policy governs capability availability, data access, provider selection and resource limits. Agent-supplied identity/permissions are ignored. Booking, position mutation and external quoting are separate future capabilities with their own rules. Do not insert generic approval dialogs for already resolved ordinary analytics; prompt for material ambiguity or a policy-required action only.
 
 ## Acceptance
 

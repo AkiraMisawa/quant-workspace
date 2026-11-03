@@ -1,8 +1,10 @@
 using System.Text.Json.Nodes;
+using Workbench.Agent;
 using Workbench.Composition.Application;
 using Workbench.Composition.Application.Workspaces;
 using Workbench.Composition.Contracts;
 using Workbench.Persistence.Sqlite;
+using Workbench.Samples.Rates;
 using Workbench.Samples.Synthetic;
 using Workbench.Samples.Xva;
 using Workbench.Web;
@@ -20,6 +22,24 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 // The composition root: the only place that names modules and providers.
 builder.Services.AddSingleton<IWorkbenchModule, SyntheticModule>();
 builder.Services.AddSingleton<IWorkbenchModule, XvaModule>();
+
+// Rates (docs/07): conventions and the synthetic market come from configuration; the provider is the fake one,
+// which says simulated on every figure. A real worker replaces IRatesPricingProvider here and nowhere else.
+var rates = builder.Configuration.GetSection("Rates").Get<RatesSettings>() ?? new RatesSettings();
+var conventions = rates.Registry();
+var syntheticMarket = new SyntheticMarket(rates.SyntheticMarket.Config());
+builder.Services.AddSingleton(conventions);
+builder.Services.AddSingleton<IRatesPricingProvider, FakeRatesPricing>();
+builder.Services.AddSingleton(sp => new RatesLiveService(sp.GetRequiredService<IRatesPricingProvider>(), syntheticMarket.Resolve, sp.GetRequiredService<TimeProvider>(),
+    TimeSpan.FromSeconds(rates.LiveIdleStopSeconds)));
+builder.Services.AddSingleton(sp => new MarketFeed(syntheticMarket, sp.GetRequiredService<RatesLiveService>()));
+builder.Services.AddSingleton<IWorkbenchModule>(sp => new RatesModule(sp.GetRequiredService<IRatesPricingProvider>(), syntheticMarket.Resolve));
+builder.Services.AddSingleton<RatesWorkspaces>();
+// The commands reach the workspace service only when invoked: it is built from the registry they are part of.
+builder.Services.AddSingleton<IWorkbenchModule>(sp => new RatesCommandsModule(sp.GetRequiredService<RatesWorkspaces>));
+builder.Services.AddSingleton(sp => new CommandService(sp.GetRequiredService<CompositionRegistry>(), sp.GetRequiredService<IDataStore>()));
+if (rates.Ticker)
+    builder.Services.AddHostedService(sp => new MarketTicker(sp.GetRequiredService<MarketFeed>(), rates.SyntheticMarket.Config().Step, sp.GetRequiredService<ILogger<MarketTicker>>()));
 builder.Services.AddSingleton<CompositionRegistry>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<RunService>();
@@ -33,11 +53,35 @@ builder.Services.AddSingleton(_ => new SqliteRunStore(database));
 builder.Services.AddSingleton<IRunStore>(sp => sp.GetRequiredService<SqliteRunStore>());
 builder.Services.AddSingleton<IDataStore>(sp => sp.GetRequiredService<SqliteRunStore>());
 builder.Services.AddSingleton<IWorkspaceStore>(_ => new SqliteWorkspaceStore(database,
-    new Dictionary<string, SourceResolver> { [XvaEditRules.App] = XvaSourceVersion.Resolve }));
+    new Dictionary<string, SourceResolver> { [XvaEditRules.App] = XvaSourceVersion.Resolve, [RatesEditRules.App] = RatesWorkspaces.Resolve }));
 builder.Services.AddSingleton(sp => new WorkspaceService(
-    new Dictionary<string, IEditRules> { [XvaEditRules.App] = new XvaEditRules() },
+    new Dictionary<string, IEditRules> { [XvaEditRules.App] = new XvaEditRules(), [RatesEditRules.App] = new RatesEditRules(conventions) },
     sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<IWorkspaceStore>()));
 builder.Services.AddSingleton<XvaWorkspaces>();
+// The AI pane (ADR-0007): the agent runtime is chosen here and nowhere else, by configuration, and an unknown one stops
+// startup rather than falling back to another. "copilot" talks to the agent host, a separate process under the agent's
+// own identity (C44); this process never holds the model credential.
+builder.Services.AddSingleton<AgentThreads>();
+builder.Services.AddSingleton<AgentToolGateway>();
+builder.Services.AddSingleton<AgentService>();
+foreach (var request in RatesScriptedRequests.All(conventions)) builder.Services.AddSingleton(request);
+var agentRuntime = builder.Configuration["Agent:Runtime"];
+switch (agentRuntime)
+{
+    case "scripted":
+        builder.Services.AddSingleton<IAgentRuntime, ScriptedAgent>();
+        break;
+    case "copilot":
+        var copilot = new CopilotRuntimeOptions(
+            new Uri(Required("Agent:Copilot:HostUrl")),
+            Required("Agent:Copilot:HostKey"),
+            Required("Agent:Copilot:Model"));
+        builder.Services.AddHttpClient(CopilotHttpClient).ConfigureHttpClient(c => c.Timeout = Timeout.InfiniteTimeSpan);
+        builder.Services.AddSingleton<IAgentRuntime>(sp => new CopilotAgentRuntime(sp.GetRequiredService<IHttpClientFactory>().CreateClient(CopilotHttpClient), copilot));
+        break;
+    default:
+        throw new InvalidOperationException($"Agent:Runtime is {(agentRuntime is null ? "not set" : $"'{agentRuntime}'")}; the runtimes are: scripted, copilot.");
+}
 builder.Services.AddSingleton(new CurrentUser(builder.Configuration["Workbench:DemoUser"] ?? "demo"));
 
 var app = builder.Build();
@@ -46,10 +90,20 @@ app.Services.GetRequiredService<CompositionRegistry>();
 
 app.MapWorkbenchApi();
 app.MapXvaApi();
+app.MapRatesApi();
+app.MapAgentApi();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapFallbackToFile("index.html");
 app.Run();
 
+string Required(string key) => builder.Configuration[key] is { Length: > 0 } value
+    ? value
+    : throw new InvalidOperationException($"{key} is not set; Agent:Runtime copilot needs it.");
+
 /// <summary>Exposed for the in-process API tests.</summary>
-public partial class Program;
+public partial class Program
+{
+    /// <summary>The named client the Copilot runtime reaches the agent host with.</summary>
+    public const string CopilotHttpClient = "agent-host";
+}

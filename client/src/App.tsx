@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
-import { ActionIcon, Alert, AppShell, Button, CloseButton, Group, Kbd, Loader, ScrollArea, Stack, Tabs, Text, Title, Tooltip } from '@mantine/core';
+import { ActionIcon, Alert, AppShell, Button, CloseButton, Drawer, Group, Kbd, Loader, ScrollArea, Stack, Tabs, Text, Title, Tooltip, em } from '@mantine/core';
+import { useMediaQuery } from '@mantine/hooks';
 import { useQuery } from '@tanstack/react-query';
 import type { Api } from './platform/api';
 import { ViewRenderer } from './platform/views/ViewRenderer';
@@ -12,8 +13,16 @@ import { AppDialogs, AppPanel } from './apps';
 import { RunPanel } from './shell/RunPanel';
 import { registerGridFocus } from './shell/focus';
 import { useMantineColorScheme } from '@mantine/core';
+import { AiProvider, useAi, useAiContext } from './ai/AiProvider';
+import { AiPane } from './ai/AiPane';
+import type { AgentTransport } from './ai/agui';
 
-export function App({ api, initialContext }: { readonly api: Api; readonly initialContext: Readonly<Record<string, unknown>> }) {
+export function App({ api, initialContext, agent }: {
+  readonly api: Api;
+  readonly initialContext: Readonly<Record<string, unknown>>;
+  /** The AI pane's transport; the server's AG-UI endpoint unless a test gives another. */
+  readonly agent?: AgentTransport;
+}) {
   const catalog = useQuery({ queryKey: ['catalog'], queryFn: () => api.catalog(), staleTime: Infinity });
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const notify = useCallback((message: string) => setNotice(message), []);
@@ -23,25 +32,35 @@ export function App({ api, initialContext }: { readonly api: Api; readonly initi
 
   return (
     <WorkspaceProvider api={api} catalog={catalog.data} initialContext={initialContext} notify={notify}>
-      <Shell notice={notice} clearNotice={() => setNotice(undefined)} />
+      <AiProvider {...(agent === undefined ? {} : { transport: agent })}>
+        <Shell notice={notice} clearNotice={() => setNotice(undefined)} />
+      </AiProvider>
     </WorkspaceProvider>
   );
 }
 
 function Shell({ notice, clearNotice }: { readonly notice: string | undefined; readonly clearNotice: () => void }) {
   const { colorScheme, toggleColorScheme } = useMantineColorScheme();
+  const aiOpen = useAi((s) => s.open);
+  const ai = useAiContext().store;
+  // The AI pane is beside the panels (ADR-0007 §7). On a phone, where the header wraps to its own height and there is
+  // no room beside, it is a drawer over them that does not take the keyboard when it opens.
+  const phone = useMediaQuery(`(max-width: ${em(767.98)})`, false, { getInitialValueInEffect: false });
   return (
-    <AppShell header={{ height: { base: 'auto', sm: 56 } }} padding="sm">
+    <AppShell header={{ height: { base: 'auto', sm: 56 } }} padding="sm"
+      aside={{ width: { sm: 340, lg: 400 }, breakpoint: 'sm', collapsed: { mobile: true, desktop: !aiOpen || phone } }}>
       <AppShell.Header px="sm" py={6}>
         <Group justify="space-between" wrap="wrap" gap="xs" h="100%">
           <Group gap="sm" wrap="nowrap">
             <Title order={1} size="sm" c="signal" style={{ letterSpacing: '0.08em' }}>QUANT WORKBENCH</Title>
-            <Button size="compact-xs" variant="default" onClick={openPalette} aria-label="Open command palette"
+            <Button size="compact-xs" variant="default" onClick={openPalette} aria-label="Open command line"
               rightSection={<Kbd size="xs">Ctrl K</Kbd>}>Commands</Button>
           </Group>
           <Group gap="xs" wrap="wrap">
             <ContextBar />
-            <Tooltip label="Toggle theme (Ctrl+Alt+T)">
+            <Button size="compact-xs" variant={aiOpen ? 'filled' : 'default'} onClick={() => ai.getState().setOpen(!aiOpen)}
+              aria-pressed={aiOpen} aria-label={aiOpen ? 'Hide the AI pane' : 'Show the AI pane'}>AI</Button>
+            <Tooltip label="Toggle theme (toggle theme)">
               <ActionIcon variant="default" size="sm" onClick={toggleColorScheme} aria-label="Toggle theme">
                 {colorScheme === 'dark' ? '☀' : '☾'}
               </ActionIcon>
@@ -55,6 +74,12 @@ function Shell({ notice, clearNotice }: { readonly notice: string | undefined; r
         )}
         <Panels />
       </AppShell.Main>
+      <AppShell.Aside>{aiOpen && !phone && <AiPane />}</AppShell.Aside>
+      <Drawer opened={aiOpen && phone} onClose={() => ai.getState().setOpen(false)} position="right" size="100%" withCloseButton={false}
+        trapFocus={false} returnFocus={false} padding={0} transitionProps={{ duration: 0 }} aria-label="AI"
+        styles={{ content: { display: 'flex', flexDirection: 'column' }, body: { flex: 1, minHeight: 0 } }}>
+        {aiOpen && phone && <AiPane />}
+      </Drawer>
       <CommandPalette />
       <RunDialog />
       <AppDialogs />
@@ -72,7 +97,7 @@ function Panels() {
     return (
       <Stack align="center" mt="xl" gap="xs">
         <Text c="dimmed">Nothing open yet.</Text>
-        <Text c="dimmed" size="sm">Press <Kbd>Ctrl</Kbd> + <Kbd>K</Kbd> and run a workflow, start a New XVA workspace or Open Pricing DB.</Text>
+        <Text c="dimmed" size="sm">Press <Kbd>Ctrl</Kbd> + <Kbd>K</Kbd> and type what you want to do: <Kbd>new rates</Kbd>, <Kbd>new xva</Kbd>, <Kbd>open pricing db</Kbd>, or <Kbd>?</Kbd> for every command.</Text>
       </Stack>
     );
 

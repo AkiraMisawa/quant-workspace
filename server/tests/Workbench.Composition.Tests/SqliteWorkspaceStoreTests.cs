@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Workbench.Composition.Application;
 using Workbench.Composition.Application.Workspaces;
 using Workbench.Persistence.Sqlite;
 using Workbench.Samples.Xva;
@@ -100,5 +101,28 @@ public sealed class SqliteWorkspaceStoreTests : IDisposable
         var restored = Service(Store()).Find(ws.WorkspaceId)!;
 
         Assert.Equal((null, Ownership.User), (XvaMaterialiser.Credit(restored).CvaRecovery, XvaMaterialiser.Credit(restored).CvaRecoveryOwner));
+    }
+
+    [Fact] // ADR-0005 §3: an edit's origin survives a restart, and a log written before origins gains the column with none
+    public void An_edits_origin_is_kept_and_an_older_log_is_migrated()
+    {
+        using (var old = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}"))
+        {
+            old.Open();
+            using var command = old.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE EditLog (workspace_id TEXT NOT NULL, seq INTEGER NOT NULL, at TEXT NOT NULL, user_id TEXT NOT NULL,
+                    kind TEXT NOT NULL, domain_kind TEXT, scope TEXT, entity TEXT, field TEXT, value_json TEXT, note TEXT,
+                    PRIMARY KEY (workspace_id, seq));
+                """;
+            command.ExecuteNonQuery();
+        }
+        var service = Service(Store());
+        var ws = service.Create("akira", XvaEditRules.App, Context(Day1), new XvaSourceVersion("ABC/LE-01", Day1, 40));
+        ws = service.Set(ws.WorkspaceId, ws.Revision, "akira", XvaEditRules.Target((XvaSourceVersion)ws.Source, "trade:DRAFT-1", "csa"), "CSA-B", RunOrigin.Ai);
+
+        var restored = Service(Store()).Find(ws.WorkspaceId)!;
+
+        Assert.Equal([null, null, RunOrigin.Ai], restored.Log.Select(e => e.Origin));
     }
 }
