@@ -4,7 +4,7 @@
 
 | Participant | Responsibility |
 |---|---|
-| Blazor AI workspace | Conversation, structured choices, editable inputs, progress and result views |
+| AI pane (React, [ADR-0007](adr/0007-the-ai-pane-speaks-ag-ui-to-a-replaceable-agent-that-calls-commands.md)) | Conversation, structured choices, editable inputs, progress and result views |
 | UI-agent transport adapter | AG-UI-compatible event exchange and reconnect/turn identity |
 | Agent runtime adapter | Model interaction, tool proposals and conversation state |
 | Application tool gateway | Authenticated capability discovery, validation, binding and execution |

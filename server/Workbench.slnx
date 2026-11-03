@@ -1,5 +1,8 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Workbench.Agent/Workbench.Agent.csproj" />
+    <Project Path="src/Workbench.AgentHost.Contracts/Workbench.AgentHost.Contracts.csproj" />
+    <Project Path="src/Workbench.AgentHost/Workbench.AgentHost.csproj" />
     <Project Path="src/Workbench.Composition.Application/Workbench.Composition.Application.csproj" />
     <Project Path="src/Workbench.Composition.Contracts/Workbench.Composition.Contracts.csproj" />
     <Project Path="src/Workbench.Samples.Synthetic/Workbench.Samples.Synthetic.csproj" />

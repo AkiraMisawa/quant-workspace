@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Workbench.Composition.Application\Workbench.Composition.Application.csproj" />
+    <ProjectReference Include="..\Workbench.Agent\Workbench.Agent.csproj" />
   </ItemGroup>
 
 </Project>

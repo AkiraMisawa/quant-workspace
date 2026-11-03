@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- The agent host (ADR-0007 §5, C44, C45): a process of its own, under the agent's identity, which reaches the model
+       and nothing else. It references no workbench project but the wire, so it cannot reach the workbench's stores or
+       commands even by mistake. -->
+  <ItemGroup>
+    <PackageReference Include="GitHub.Copilot.SDK" Version="1.0.27" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Workbench.AgentHost.Contracts\Workbench.AgentHost.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

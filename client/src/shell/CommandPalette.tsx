@@ -12,6 +12,10 @@ import { viewsFor } from '../platform/views/binding';
 import { CONTEXT_CONTRACT, useWorkspace, useWorkspaceContext } from '../platform/workspace/WorkspaceProvider';
 import { keyOf, type Panel, type WorkspaceState } from '../platform/workspace/workspaceStore';
 import { focusGrid } from './focus';
+import { useStore } from 'zustand';
+import { createStore } from 'zustand/vanilla';
+import { useOptionalAiStore } from '../ai/AiProvider';
+import { aiContextOf } from '../ai/effects';
 import { appCommands } from '../apps';
 
 /**
@@ -24,6 +28,8 @@ export function buildCommands(args: {
   readonly activeRun: RunRecord | undefined;
   readonly toggleTheme: () => void;
   readonly notify: (message: string) => void;
+  /** The AI pane, where one is mounted: `ai <request>` hands the request to it (ADR-0006 §7, ADR-0007 §7). */
+  readonly ai?: { readonly ask: (request: string) => string | undefined; readonly open: boolean; readonly setOpen: (open: boolean) => void };
 }): Command[] {
   const { catalog, state, activeRun } = args;
   const active: Panel | undefined = state.panels.find((p) => p.id === state.activePanelId);
@@ -126,16 +132,26 @@ export function buildCommands(args: {
       run: args.toggleTheme,
     },
     {
-      // ADR-0006 §7: the request goes to the AI pane with the current context. No runtime is connected yet (C34), so
-      // the command says so and sends nothing.
+      // ADR-0006 §7: the request goes to the AI pane with the current context; the keyboard stays where it was.
       id: 'ai.ask',
       words: 'ai',
       title: 'Ask the AI',
       group: 'AI',
       args: [{ name: 'request', required: true, rest: true, hint: 'what you want done, in your own words' }],
-      unavailable: 'No AI runtime is connected yet; nothing was sent.',
+      ...(args.ai === undefined ? { unavailable: 'The AI pane is not shown here; nothing was sent.' } : {}),
       ...(active === undefined ? {} : { target: active.title }),
-      run: () => undefined,
+      run: (a) => {
+        const refused = args.ai?.ask(a.request ?? '');
+        if (refused !== undefined) args.notify(`ai: ${refused}`);
+      },
+    },
+    {
+      id: 'ai.pane',
+      words: args.ai?.open === true ? 'close ai pane' : 'open ai pane',
+      title: args.ai?.open === true ? 'Hide the AI pane' : 'Show the AI pane',
+      group: 'AI',
+      ...(args.ai === undefined ? { unavailable: 'The AI pane is not shown here.' } : {}),
+      run: () => args.ai?.setOpen(!args.ai.open),
     },
     ...appCommands(state),
   );
@@ -149,6 +165,9 @@ export function wordsOf(title: string): string {
 }
 
 let openLine: (() => void) | undefined;
+
+/** Stands in for the AI store where no pane is mounted, so the hook order never changes. */
+const NO_AI = createStore<{ readonly open: boolean }>()(() => ({ open: false }));
 
 /** Opens the command line (Ctrl+K anywhere; `/` where it would not be typed into something). */
 export function openPalette(): void {
@@ -165,6 +184,8 @@ export function CommandPalette() {
   const activePanelId = useWorkspace((s) => s.activePanelId);
   const context = useWorkspace((s) => s.context);
   const { toggleColorScheme } = useMantineColorScheme();
+  const aiStore = useOptionalAiStore();
+  const aiOpen = useStore(aiStore ?? NO_AI, (s) => s.open);
   const active = panels.find((p) => p.id === activePanelId);
   const runId = active?.kind === 'run' ? active.runId : undefined;
   // Observes the active Run's cached record; its panel is the one that fetches and polls it.
@@ -184,8 +205,13 @@ export function CommandPalette() {
   // Built when the line opens and as the panels change, so a page that registers its commands after mounting is seen.
   const commands = useMemo(() => {
     const state = workspace.store.getState();
-    return buildCommands({ catalog: workspace.catalog, state: { ...state, panels, activePanelId, context }, activeRun, toggleTheme: toggleColorScheme, notify: workspace.notify });
-  }, [workspace, panels, activePanelId, context, activeRun, toggleColorScheme, opened]);
+    const ai = aiStore === undefined ? undefined : {
+      open: aiOpen,
+      setOpen: (open: boolean) => aiStore.getState().setOpen(open),
+      ask: (request: string) => aiStore.getState().ask(request, aiContextOf(active)),
+    };
+    return buildCommands({ catalog: workspace.catalog, state: { ...state, panels, activePanelId, context }, activeRun, toggleTheme: toggleColorScheme, notify: workspace.notify, ...(ai === undefined ? {} : { ai }) });
+  }, [workspace, panels, activePanelId, context, activeRun, toggleColorScheme, opened, aiStore, aiOpen, active]);
 
   useEffect(() => {
     openLine = () => { setText(''); setProblems([]); setHighlight(0); setOpened(true); };
@@ -241,7 +267,13 @@ export function CommandPalette() {
 
   const enter = () => {
     if (reading.kind === 'choosing') {
-      if (!(chosen !== undefined && 'words' in chosen)) { setProblems([text.trim() === '' ? 'Type what you want to do.' : 'No command matches.']); return; }
+      if (!(chosen !== undefined && 'words' in chosen)) {
+        // ADR-0006 §7: what matches no command is offered to the AI last.
+        const ask = commands.find((c) => c.id === 'ai.ask');
+        if (text.trim() !== '' && ask !== undefined && ask.unavailable === undefined) { runNow(ask, { request: text.trim() }); return; }
+        setProblems([text.trim() === '' ? 'Type what you want to do.' : 'No command matches.']);
+        return;
+      }
       if (chosen.unavailable !== undefined) { setProblems([chosen.unavailable]); return; }
       if ((chosen.args ?? []).some((a) => a.required)) { takeItem(chosen); return; }
       runNow(chosen, {});
@@ -295,7 +327,7 @@ export function CommandPalette() {
             </UnstyledButton>
           ))}
           {items.length === 0 && reading.kind === 'choosing' && text.trim() !== '' && (
-            <Text size="xs" c="dimmed" px="xs">No command matches. <Kbd size="xs">ai {text.trim()}</Kbd> asks the AI.</Text>
+            <Text size="xs" c="dimmed" px="xs">No command matches. <Kbd size="xs">Enter</Kbd> asks the AI: <Kbd size="xs">ai {text.trim()}</Kbd></Text>
           )}
         </Stack>
         <Group gap="md">
