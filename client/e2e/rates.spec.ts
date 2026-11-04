@@ -61,7 +61,10 @@ test('C40, docs/07: a line typed by keyboard ticks live, is captured and priced 
   await expect(cell(page, LEG1_NOTIONAL)).toHaveText('1,000');
 
   await page.getByTestId('live-toggle').click();
-  // The result stands after the inputs, so it is scrolled to.
+  // The line in hand shows its result above the grid, though the result columns are off screen (owner, 2026-11-04).
+  await expect(page.getByTestId('line-result-status')).toHaveText('priced');
+  await expect(page.getByTestId('line-result-pv')).toHaveText(/^PV -?[\d,]+ JPY$/);
+  // The result columns stand after the inputs, so they are scrolled to.
   await goTo(page, PV);
   await expect(cell(page, STATUS)).toHaveText('priced');
   await expect(cell(page, PV)).toHaveText(/^-?[\d,]+$/);

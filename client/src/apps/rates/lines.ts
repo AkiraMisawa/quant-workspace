@@ -297,6 +297,33 @@ function message(row: LineRow): string | undefined {
 
 const RESULT = new Set(['status', 'pv', 'pvCurrency', 'par']);
 
+/** One line's result as the strip above the grid shows it, whatever the grid has scrolled to (owner, 2026-11-04). */
+export interface LineResult {
+  readonly line: string;
+  /** `none` until a frame has figures for the line. */
+  readonly status: LineFigures['status'] | 'none';
+  readonly pv?: string;
+  readonly par?: string;
+  /** What the par figure is: the fixed leg's par rate or the floating leg's fair spread. */
+  readonly parLabel?: string;
+  /** Whether the figures were calculated on an older revision than the line shows: never shown as current. */
+  readonly stale: boolean;
+  readonly issues?: string;
+}
+
+export function lineResult(row: LineRow): LineResult {
+  const f = row.figures;
+  const issues = message(row);
+  return {
+    line: row.line,
+    status: f === undefined ? 'none' : f.status,
+    stale: row.figuresStale,
+    ...(f?.pv === undefined ? {} : { pv: `${amount.format(f.pv)}${f.pvCurrency === undefined ? '' : ` ${f.pvCurrency}`}` }),
+    ...(f?.par === undefined ? {} : { par: `${pct.format(f.par)}%`, parLabel: f.parMeasure === 'fairSpread' ? 'Fair spread' : 'Par rate' }),
+    ...(issues === undefined ? {} : { issues }),
+  };
+}
+
 /** A cell's state: the user's edits, held edits, a line that cannot be priced, and figures of an older revision. */
 export function lineCellState(row: LineRow, column: GridColumn<LineRow>): CellState {
   if (RESULT.has(column.name)) {

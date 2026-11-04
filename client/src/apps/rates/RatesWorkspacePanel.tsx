@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Badge, Button, Group, Stack, Table, Text, TextInput } from '@mantine/core';
-import { GridSource, type GridActionEvent, type GridColumn, type GridEditIntent, type HeaderGroupToggle } from '@ex-grid/core';
+import { GridSource, type GridActionEvent, type GridColumn, type GridEditIntent, type GridSelection, type HeaderGroupToggle } from '@ex-grid/core';
 import { ExGrid, type ExGridApi } from '@ex-grid/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '../../platform/api';
@@ -12,7 +12,7 @@ import type { FrameStream, RatesApi } from './api';
 import { registerRatesCommands } from './commands';
 import type { CashflowsView, HeldEdit, LiveFrame, PeriodView, RatesWorkspaceView, Resolution } from './contracts';
 import {
-  LEG_GROUPS, PINNED_COLUMNS, lineCellMessage, lineCellState, lineColumns, hiddenEdits, lineHeaderGroups, lineRows, parserOf, periodCellState, periodColumns, periodParserOf,
+  LEG_GROUPS, PINNED_COLUMNS, lineCellMessage, lineResult, lineCellState, lineColumns, hiddenEdits, lineHeaderGroups, lineRows, parserOf, periodCellState, periodColumns, periodParserOf,
   type LineRow,
 } from './lines';
 
@@ -86,12 +86,22 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
   // The rows live in a source keyed by line, so a tick replaces only the rows whose figures moved.
   const source = useMemo(() => GridSource.from<LineRow>([], { rowKey: (row) => row.line }), []);
   const rowsByLine = useRef<ReadonlyMap<string, LineRow>>(new Map());
+  const [shownRows, setShownRows] = useState<ReadonlyMap<string, LineRow>>(new Map());
   useEffect(() => {
     if (view.data === undefined) return;
     const rows = lineRows(view.data.lines, view.data.revision, frame, rowsByLine.current);
     rowsByLine.current = new Map(rows.map((r) => [r.line, r]));
+    setShownRows(rowsByLine.current);
     source.replaceAll(rows);
   }, [view.data, frame, source]);
+
+  // The line the grid's Focus is on, by its key, so its result shows above the grid wherever the grid has scrolled.
+  const [focusLine, setFocusLine] = useState<string | undefined>(undefined);
+  const onSelectionChanged = useCallback((selection: GridSelection) => {
+    if (selection.focus === undefined) { setFocusLine(undefined); return; }
+    const state = source.snapshot();
+    setFocusLine(state.window[selection.focus.row - state.windowStart]?.line);
+  }, [source]);
 
   // Live (owner, 2026-10-27): the workspace's one subscription runs on the server; this page attaches to it
   // while it is open and only detaches when it goes. The server stops it once nobody has watched it for the
@@ -264,10 +274,11 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
         <Text size="xs" c="dimmed" data-testid="workspace-summary">{ws.lines.length} line(s) · revision {ws.revision}</Text>
       </Group>
       <HeldEdits conflicts={ws.conflicts} lost={ws.lost} resolve={(held, resolution) => void queue.push({ kind: 'resolve', held, resolution })} />
+      <ResultStrip row={(focusLine === undefined ? undefined : shownRows.get(focusLine)) ?? (shownRows.size === 1 ? [...shownRows.values()][0] : undefined)} />
       <div className="qwb-grid" aria-label="Lines">
         <ExGrid<LineRow> ref={grid} columns={layout.columns} headerGroups={layout.groups} source={source} onEdit={onEdit} onAction={onAction}
           cellState={lineCellState} cellMessage={lineCellMessage} density="compact" viewportWidth="stretch" viewportHeight={height}
-          pinnedColumnCount={PINNED_COLUMNS} locale="en-US" onHeaderGroupToggled={onLegToggled} />
+          pinnedColumnCount={PINNED_COLUMNS} locale="en-US" onHeaderGroupToggled={onLegToggled} onSelectionChanged={onSelectionChanged} />
       </div>
       {detail !== undefined && ws.lines.some((l) => l.line === detail) && (
         <Cashflows workspaceId={workspaceId} line={detail} revision={ws.revision} api={api} onClose={() => setDetail(undefined)}
@@ -275,6 +286,27 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
       )}
       {ws.runs.length > 0 && <Text size="xs" c="dimmed">Runs: {ws.runs.map((r) => `${r.runId.slice(-8)} (r${r.revision})`).join(', ')}</Text>}
     </Stack>
+  );
+}
+
+/**
+ * The focused line's result above the grid (owner, 2026-11-04): the result columns stand after the inputs and are off
+ * screen on a narrow display, so what was calculated for the line in hand is shown here whatever the grid scrolled to.
+ */
+function ResultStrip({ row }: { readonly row: LineRow | undefined }) {
+  if (row === undefined) return <Text size="xs" c="dimmed" data-testid="line-result">Select a line to see its result here.</Text>;
+  const r = lineResult(row);
+  const color = r.status === 'priced' ? (r.stale ? 'yellow' : 'teal') : r.status === 'none' ? 'gray' : 'red';
+  return (
+    <Group gap="sm" wrap="wrap" data-testid="line-result" aria-live="polite" aria-label={`Result of ${r.line}`}>
+      <Text size="sm" fw={600}>{r.line}</Text>
+      <Badge variant="light" color={color} data-testid="line-result-status">
+        {r.status === 'none' ? 'no figures yet' : r.status === 'notPriced' ? 'not priced' : r.status}{r.stale ? ' · older revision' : ''}
+      </Badge>
+      {r.pv !== undefined && <Text size="sm" data-testid="line-result-pv">PV {r.pv}</Text>}
+      {r.par !== undefined && <Text size="sm" data-testid="line-result-par">{r.parLabel} {r.par}</Text>}
+      {r.issues !== undefined && <Text size="xs" c="red" data-testid="line-result-issues">{r.issues}</Text>}
+    </Group>
   );
 }
 

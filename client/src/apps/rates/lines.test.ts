@@ -1,5 +1,5 @@
 import type { LineView, LiveFrame } from './contracts';
-import { hiddenEdits, lineColumns, lineHeaderGroups, lineRows, parserOf } from './lines';
+import { hiddenEdits, lineColumns, lineHeaderGroups, lineResult, lineRows, parserOf } from './lines';
 
 const line = (name: string): LineView => ({
   line: name, fields: {}, userFields: [], priceable: true, parLeg: 1, spot: null, profiles: [], issues: [], held: [],
@@ -105,5 +105,20 @@ describe('a notional in millions (owner, 2026-11-04)', () => {
     expect(column.header).toBe('Notional (mm)');
     expect(column.format!(1e9)).toBe('1,000');
     expect(column.format!(2.5e6)).toBe('2.5');
+  });
+});
+
+describe("the strip with the focused line's result (owner, 2026-11-04)", () => {
+  it('shows the figures with their unit and measure, marked stale while a newer revision waits', () => {
+    const [priced, left] = lineRows([line('L2'), line('L3')], 7, frame(6), new Map());
+
+    expect(lineResult(priced!)).toEqual({ line: 'L2', status: 'priced', pv: '13 JPY', par: '0.61000%', parLabel: 'Par rate', stale: true });
+    expect(lineResult(left!)).toMatchObject({ line: 'L3', status: 'notPriced', stale: true });
+    expect(lineResult(left!).pv).toBeUndefined();
+  });
+
+  it('says a line has no figures yet rather than show a zero', () => {
+    const [row] = lineRows([{ ...line('L4'), issues: ['The end is empty.'] }], 7, undefined, new Map());
+    expect(lineResult(row!)).toEqual({ line: 'L4', status: 'none', stale: false, issues: 'The end is empty.' });
   });
 });

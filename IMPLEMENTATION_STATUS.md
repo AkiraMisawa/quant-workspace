@@ -168,7 +168,8 @@ The provider and the market are simulated. Real holiday calendars, the confirmed
 - The Pricing DB lists Rates Runs, not a row per line.
 - Snapshots are kept for the life of the process.
 - A collapsed leg's hidden values are priced whether shown or not; its hidden mark says so.
-- The result stands after the inputs, so on a laptop-width screen it is scrolled to; ExGrid pins columns on the left only.
+- The result columns stand after the inputs, so on a laptop-width screen they are scrolled to (ExGrid pins columns on the left only); a strip above the grid shows the focused line's status, PV and par or fair spread, or the only line's, at any width (owner, 2026-11-04). Its following the Focus between lines is not yet driven in the browser.
+- On a phone the pinned Line and action columns take about half the grid's width.
 - Every header carries ExGrid's column menu and sort mark, which set the narrowest a column can be (the Line and action columns included).
 - A Price result opens as a Run; it does not fill the line grid's figures, which only live frames do.
 - Per-line risk (the deltas) is in the Run's Risk grid only; the line grid shows PV and the solved quote.
