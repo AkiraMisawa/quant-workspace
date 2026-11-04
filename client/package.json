@@ -27,9 +27,9 @@
   },
   "dependencies": {
     "@ag-ui/core": "1.0.3",
-    "@ex-grid/core": "file:../vendor/ex-grid/ex-grid-core-0.0.0-dev.tgz",
-    "@ex-grid/data": "file:../vendor/ex-grid/ex-grid-data-0.0.0-dev.tgz",
-    "@ex-grid/react": "file:../vendor/ex-grid/ex-grid-react-0.0.0-dev.tgz",
+    "@ex-grid/core": "0.2.0-beta.3",
+    "@ex-grid/data": "0.2.0-beta.3",
+    "@ex-grid/react": "0.2.0-beta.3",
     "@mantine/core": "9.7.4",
     "@mantine/hooks": "9.7.4",
     "@tanstack/react-query": "5.105.0",
