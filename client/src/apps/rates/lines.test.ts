@@ -82,3 +82,28 @@ describe('the line grid', () => {
     expect(again[0]).toBe(first[0]);
   });
 });
+
+describe('a notional in millions (owner, 2026-11-04)', () => {
+  const read = parserOf('leg1.notional')!;
+
+  it('reads a bare number as millions, and a scale as written', () => {
+    expect(read('1000')).toEqual({ ok: true, value: 1e9 });
+    expect(read('2.5')).toEqual({ ok: true, value: 2.5e6 });
+    expect(read('3bn')).toEqual({ ok: true, value: 3e9 });
+    expect(read('500m')).toEqual({ ok: true, value: 5e8 });
+    expect(read('')).toEqual({ ok: true, value: null });
+  });
+
+  it('refuses a full amount typed out of habit rather than make it a million times larger (spine 1)', () => {
+    const typed = read('1,000,000,000');
+    expect(typed.ok).toBe(false);
+    expect(typed.ok ? '' : typed.message).toContain('millions');
+  });
+
+  it('shows a notional in millions under a header that says so', () => {
+    const column = lineColumns({ leg1: false, leg2: false }).find((c) => c.name === 'leg1.notional')!;
+    expect(column.header).toBe('Notional (mm)');
+    expect(column.format!(1e9)).toBe('1,000');
+    expect(column.format!(2.5e6)).toBe('2.5');
+  });
+});

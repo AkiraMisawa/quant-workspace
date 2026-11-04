@@ -3,7 +3,6 @@ import { Button, Group, Modal, NumberInput, Select, Stack, TextInput } from '@ma
 import { useQuery } from '@tanstack/react-query';
 import type { Command, CommandArgument } from '../platform/commands/commands';
 import { parserOf } from './rates/lines';
-import { parseNumber } from './xva/editing';
 import { useWorkspace, useWorkspaceContext } from '../platform/workspace/WorkspaceProvider';
 import type { Panel, WorkspaceState } from '../platform/workspace/workspaceStore';
 import { PricingDbPanel } from './history/PricingDbPanel';
@@ -149,16 +148,6 @@ export function appCommands(state: Pick<WorkspaceState, 'showApp' | 'openAppDial
 const TENORS = ['1y', '2y', '3y', '5y', '7y', '10y', '15y', '20y', '30y'];
 const FREQUENCIES = [{ value: '1m' }, { value: '3m' }, { value: '6m' }, { value: '12m' }];
 
-/** A notional as typed on the line: a number, or one with k, m or bn after it (`3bn`, `500m`). */
-export function parseNotional(text: string): number | undefined {
-  const m = /^(.+?)(k|m|bn)?$/i.exec(text.trim());
-  if (m === null) return undefined;
-  const n = parseNumber(m[1]!);
-  if (n === undefined || n <= 0) return undefined;
-  const scale = { k: 1e3, m: 1e6, bn: 1e9 }[(m[2] ?? '').toLowerCase() as 'k' | 'm' | 'bn'] ?? 1;
-  return n * scale;
-}
-
 const parsed = (field: string) => (value: string): string | undefined => {
   const result = parserOf(field)!(value);
   return result.ok ? undefined : result.message;
@@ -174,7 +163,7 @@ function irsArguments(conventions: () => readonly { readonly currency: string; r
     { name: 'currency', required: true, complete: () => [...new Set(conventions().map((c) => c.currency))].map((value) => ({ value })) },
     { name: 'index', required: true, complete: (g) => conventions().filter((c) => g.currency === undefined || c.currency === g.currency.toUpperCase()).map((c) => ({ value: c.index, detail: c.currency })) },
     { name: 'end', required: true, hint: 'a tenor such as 10y, or a date', complete: () => TENORS.map((value) => ({ value })), check: parsed('end') },
-    { name: 'notional', required: true, hint: 'such as 1000000000, 3bn or 500m', check: (v) => (parseNotional(v) === undefined ? 'a positive number, with k, m or bn if you like' : undefined) },
+    { name: 'notional', required: true, hint: 'in millions (1000 is a billion), or 3bn, 500m', check: parsed('leg1.notional') },
     { name: 'direction', required: true, complete: () => [{ value: 'pay', detail: 'pay fixed' }, { value: 'receive', detail: 'receive fixed' }], check: parsed('direction') },
     { name: 'fixed-frequency', required: true, complete: () => FREQUENCIES, check: parsed('leg1.paymentFrequency') },
     { name: 'float-frequency', required: true, complete: () => FREQUENCIES, check: parsed('leg2.paymentFrequency') },
@@ -189,8 +178,7 @@ function irsTerms(a: Readonly<Record<string, string>>): Record<string, unknown> 
     if (!result.ok) throw new Error(`${field} was checked on the line and is refused now: ${result.message}`);
     return result.value;
   };
-  const notional = parseNotional(a.notional!);
-  if (notional === undefined) throw new Error('The notional was checked on the line and is refused now.');
+  const notional = value('leg1.notional', a.notional!);
   const terms: Record<string, unknown> = { product: 'irs', end: value('end', a.end!), direction: value('direction', a.direction!) };
   for (const [leg, frequency] of [[1, a['fixed-frequency']!], [2, a['float-frequency']!]] as const) {
     terms[`leg${leg}.currency`] = a.currency!.toUpperCase();

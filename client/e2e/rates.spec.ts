@@ -47,8 +47,8 @@ test('C40, docs/07: a line typed by keyboard ticks live, is captured and priced 
   await page.keyboard.press('ControlOrMeta+Home');
   await page.keyboard.press('ControlOrMeta+Home');
   for (let i = 0; i < END; i++) await page.keyboard.press('ArrowRight');
-  const typed: (string | null)[] = ['5y', null, 'JPY', 'TONA', '1,000,000,000', null, null, '12m', null, null,
-    'JPY', 'TONA', '1,000,000,000', 'spread', '0', '12m'];
+  const typed: (string | null)[] = ['5y', null, 'JPY', 'TONA', '1000', null, null, '12m', null, null,
+    'JPY', 'TONA', '1000', 'spread', '0', '12m'];
   for (const text of typed) {
     if (text !== null) await page.keyboard.type(text);
     await page.keyboard.press('Tab');
@@ -57,8 +57,8 @@ test('C40, docs/07: a line typed by keyboard ticks live, is captured and priced 
   await expect(cell(page, LEG2_QUOTE)).toHaveText('0');
   await page.keyboard.press('ControlOrMeta+Home');
   await expect(cell(page, END)).toHaveText('5y');
-  // A billion fits its column whole: a notional shown as #### would be unreadable, not wrong, but still unusable.
-  await expect(cell(page, LEG1_NOTIONAL)).toHaveText('1,000,000,000');
+  // A notional is typed and shown in millions (owner, 2026-11-04): 1000 is a billion, and the server priced it so.
+  await expect(cell(page, LEG1_NOTIONAL)).toHaveText('1,000');
 
   await page.getByTestId('live-toggle').click();
   // The result stands after the inputs, so it is scrolled to.
@@ -137,7 +137,7 @@ test('ADR-0006: a line is made from the command line, its arguments completed fr
   await expect(line).toBeHidden();
   await expect(page.getByTestId('workspace-summary')).toContainText('1 line(s)');
   await expect(cell(page, END)).toHaveText('10y');
-  await expect(cell(page, LEG1_NOTIONAL)).toHaveText('3,000,000,000');
+  await expect(cell(page, LEG1_NOTIONAL)).toHaveText('3,000');
   await settled(page, 'Lines');
   // A line that can be priced has no issues.
   await goTo(page, ISSUES);

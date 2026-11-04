@@ -58,6 +58,32 @@ function number(text: string): Parsed {
   return n === undefined ? fail('Type a number, such as 1,000,000 or 0.25, or leave it empty.') : { ok: true, value: n };
 }
 
+/** A notional is shown and typed in millions (owner, 2026-11-04); the server keeps it in units of its currency. */
+export const MILLION = 1e6;
+
+/**
+ * Reads a notional as typed: a bare number is millions (`1000` is a billion), and `k`, `m` or `bn` after it says its
+ * own scale (`3bn`, `500m`). A bare number of a million or more would be a trillion or more: almost surely a full
+ * amount typed out of habit, so it is refused rather than taken as millions (spine 1).
+ */
+export function parseNotional(text: string): number | undefined | 'fullAmount' {
+  const m = /^(.+?)\s*(k|m|bn)?$/i.exec(text.trim());
+  if (m === null) return undefined;
+  const n = parseNumber(m[1]!);
+  if (n === undefined || n <= 0) return undefined;
+  if (m[2] === undefined) return n >= MILLION ? 'fullAmount' : n * MILLION;
+  return n * { k: 1e3, m: 1e6, bn: 1e9 }[m[2].toLowerCase() as 'k' | 'm' | 'bn'];
+}
+
+const NOTIONAL_HELP = 'Type the notional in millions (1000 is a billion), or with its scale: 3bn, 500m.';
+
+function notional(text: string): Parsed {
+  if (empty(text)) return { ok: true, value: null };
+  const n = parseNotional(text);
+  if (n === 'fullAmount') return fail(`That reads as ${millions.format(Number(text.replaceAll(',', '')))} million. ${NOTIONAL_HELP}`);
+  return n === undefined ? fail(NOTIONAL_HELP) : { ok: true, value: n };
+}
+
 function whole(text: string): Parsed {
   if (empty(text)) return { ok: true, value: null };
   const n = parseNumber(text);
@@ -105,7 +131,7 @@ export const legDetail = ['dayCount', 'adjustment', 'dailyAverage', 'observation
 const legParsers: Readonly<Record<string, (text: string) => Parsed>> = {
   currency: code('a currency'),
   index: code('an index'),
-  notional: number,
+  notional,
   quoteKind: choice(quoteKinds, 'Type fixed, spread, strike, fxpts or atm, or leave it empty for par.'),
   quote: number,
   paymentFrequency: frequency(false),
@@ -143,13 +169,16 @@ export function periodParserOf(field: string): ((text: string) => Parsed) | unde
   switch (field) {
     case 'accrualStart': case 'accrualEnd': case 'paymentDate':
       return (t) => (DATE.test(t.trim()) ? { ok: true, value: t.trim() } : fail('Type a date (yyyy-mm-dd).'));
-    case 'notional': return (t) => { const n = parseNumber(t); return n === undefined ? fail('Type a number.') : { ok: true, value: n }; };
+    case 'notional': return (t) => (empty(t) ? fail(NOTIONAL_HELP) : notional(t));
     case 'rate': return number;
     default: return undefined;
   }
 }
 
 const amount = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+const millions = new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 });
+/** A notional in millions, as typed: 1,000 for a billion, 2.5 for two and a half million. */
+const inMillions = (v: unknown) => millions.format((v as number) / MILLION);
 const pct = new Intl.NumberFormat('en-US', { minimumFractionDigits: 5, maximumFractionDigits: 5 });
 const plain = (v: unknown) => (typeof v === 'boolean' ? (v ? 'TRUE' : 'FALSE') : String(v));
 
@@ -167,7 +196,7 @@ const field = (name: string, header: string, type: GridColumn<LineRow>['type'], 
 const legHeaders: Readonly<Record<string, readonly [string, GridColumn<LineRow>['type'], number, ((v: unknown) => string)?]>> = {
   currency: ['Ccy', 'text', 56],
   index: ['Index', 'text', 72],
-  notional: ['Notional', 'number', 150, (v) => amount.format(v as number)],
+  notional: ['Notional (mm)', 'number', 90, inMillions],
   quoteKind: ['Quote type', 'text', 84, (v) => quoteLabel[v as string] ?? String(v)],
   quote: ['Rate/Strike', 'number', 92],
   paymentFrequency: ['Pay freq', 'text', 70],
@@ -339,7 +368,7 @@ export const periodColumns: readonly GridColumn<PeriodView>[] = [
   { name: 'accrualStart', header: 'Accrual start', type: 'text', width: 104, editable: true, value: (p) => p.accrualStart, format: plain },
   { name: 'accrualEnd', header: 'Accrual end', type: 'text', width: 104, editable: true, value: (p) => p.accrualEnd, format: plain },
   { name: 'paymentDate', header: 'Payment', type: 'text', width: 104, editable: true, value: (p) => p.paymentDate, format: plain },
-  { name: 'notional', header: 'Notional', type: 'number', width: 140, editable: true, value: (p) => p.notional, format: (v) => amount.format(v as number) },
+  { name: 'notional', header: 'Notional (mm)', type: 'number', width: 110, editable: true, value: (p) => p.notional, format: inMillions },
   { name: 'rate', header: 'Rate/Spread %', type: 'number', width: 110, editable: true, value: (p) => p.rate ?? undefined, format: plain },
   { name: 'yearFraction', header: 'Year fraction', type: 'number', width: 100, value: (p) => p.yearFraction, format: (v) => (v as number).toFixed(6) },
 ];
