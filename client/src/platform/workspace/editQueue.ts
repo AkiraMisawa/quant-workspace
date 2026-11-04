@@ -10,6 +10,7 @@ export class EditQueue<Edit, View extends { readonly revision: number }> {
   #revision: number;
   #tail: Promise<void> = Promise.resolve();
   #broken = false;
+  #pending = 0;
 
   constructor(
     revision: number,
@@ -30,10 +31,21 @@ export class EditQueue<Edit, View extends { readonly revision: number }> {
     this.#broken = false;
   }
 
+  /**
+   * The page now shows the workspace as read at this revision, moved by someone else (the AI, another page). With
+   * nothing of this session's waiting, later edits are taken against what is on screen, so they chain on it; while
+   * an edit is waiting, its own answer names the revision, and a refusal reads the workspace again.
+   */
+  shown(revision: number): void {
+    if (this.#pending === 0 && revision > this.#revision) this.rebase(revision);
+  }
+
   push(edit: Edit): Promise<void> {
+    this.#pending++;
     this.#tail = this.#tail.then(async () => {
       if (this.#broken) {
         this.refused(edit, new Error('An earlier edit was refused; this one was not sent.'));
+        this.#pending--;
         return;
       }
       try {
@@ -43,6 +55,8 @@ export class EditQueue<Edit, View extends { readonly revision: number }> {
       } catch (error) {
         if (error instanceof ApiError && error.envelope.code === 'RevisionMoved') this.#broken = true;
         this.refused(edit, error);
+      } finally {
+        this.#pending--;
       }
     });
     return this.#tail;

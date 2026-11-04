@@ -92,9 +92,10 @@ export function XvaWorkspacePanel({ panelId, workspaceId, api }: { readonly pane
       workspace.notify(`${edit.entity} ${edit.field} was not changed: ${describe(error)}`);
       void api.view(workspaceId).then((fresh) => { queue.rebase(fresh.revision); show(fresh); source.notifyChanged([]); });
     }), [api, workspaceId, show, source, workspace]);
-  // The queue starts from the revision the page first read, and follows every command that is not an edit.
-  const first = view.data?.revision;
-  useEffect(() => { if (first !== undefined && queue.revision === 0) queue.rebase(first); }, [first, queue]);
+  // The queue follows the revision on screen: the one first read, and any read since that someone else moved
+  // (the AI, another page), so the next edit is not refused for a change the user can already see.
+  const shownRevision = view.data?.revision;
+  useEffect(() => { if (shownRevision !== undefined) queue.shown(shownRevision); }, [shownRevision, queue]);
 
   const onEdit = useCallback((intent: GridEditIntent<Row>) => {
     const parse = tradeFields[intent.column];

@@ -172,6 +172,7 @@ The provider and the market are simulated. Real holiday calendars, the confirmed
 - A Price result opens as a Run; it does not fill the line grid's figures, which only live frames do.
 - Per-line risk (the deltas) is in the Run's Risk grid only; the line grid shows PV and the solved quote.
 - A command's idempotency keys live for the process: a retry after a restart acts again.
+- Fixed 2026-11-04: a page's edit queue now follows a revision someone else moved once the page shows it (the AI adding a line, another page), so the next edit is no longer refused as `RevisionMoved` and dropped (Vitest `editQueue.test.ts`; Playwright `ai.spec.ts` "spine 6", which fails without the fix). XVA's page takes the same queue.
 - A line the AI creates holds its terms as the line's own values, so the page does not mark them as the user's edits; the log says they came from the AI.
 
 ## The command line (ADR-0006, accepted 2026-10-27)

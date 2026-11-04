@@ -78,8 +78,10 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
         : `${edit.kind === 'line' || edit.kind === 'cashflow' ? `${edit.line} ${edit.field}` : edit.kind} was not changed: ${describe(error)}`);
       void api.view(workspaceId).then((fresh) => { queue.rebase(fresh.revision); show(fresh); });
     }), [api, workspaceId, show, workspace, queryClient]);
-  const first = view.data?.revision;
-  useEffect(() => { if (first !== undefined && queue.revision === 0) queue.rebase(first); }, [first, queue]);
+  // The queue follows the revision on screen: the one first read, and any read since that someone else moved
+  // (the AI, another page), so the next edit is not refused for a change the user can already see.
+  const shownRevision = view.data?.revision;
+  useEffect(() => { if (shownRevision !== undefined) queue.shown(shownRevision); }, [shownRevision, queue]);
 
   // The rows live in a source keyed by line, so a tick replaces only the rows whose figures moved.
   const source = useMemo(() => GridSource.from<LineRow>([], { rowKey: (row) => row.line }), []);
