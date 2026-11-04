@@ -20,11 +20,20 @@ const firstLine = (page: Page) => lines(page).getByRole('row', { name: /^L\d+ / 
 /** A cell of a row by its column's position, 0 from the left: off-screen columns are not in the DOM, so never by count. */
 const cell = (page: Page, column: number) => firstLine(page).locator(`[role=gridcell][aria-colindex="${column + 1}"]`);
 
-const STATUS = 2;
-const PV = 3;
-const END = 8;
-const LEG1_NOTIONAL = 12;
-const LEG2_QUOTE = 22;
+// The inputs first and the result after them (owner, 2026-11-04): line, actions, trade, two legs, terms, result.
+const END = 4;
+const LEG1_NOTIONAL = 8;
+const LEG2_QUOTE = 18;
+const STATUS = 25;
+const PV = 26;
+const ISSUES = 29;
+
+/** Moves the Focus to a column of the first line, from the keyboard, so the grid scrolls it into view. */
+async function goTo(page: Page, column: number): Promise<void> {
+  await page.keyboard.press('ControlOrMeta+Shift+G');
+  await page.keyboard.press('ControlOrMeta+Home');
+  for (let i = 0; i < column; i++) await page.keyboard.press('ArrowRight');
+}
 
 test('C40, docs/07: a line typed by keyboard ticks live, is captured and priced once', async ({ page }) => {
   await open(page);
@@ -52,6 +61,8 @@ test('C40, docs/07: a line typed by keyboard ticks live, is captured and priced 
   await expect(cell(page, LEG1_NOTIONAL)).toHaveText('1,000,000,000');
 
   await page.getByTestId('live-toggle').click();
+  // The result stands after the inputs, so it is scrolled to.
+  await goTo(page, PV);
   await expect(cell(page, STATUS)).toHaveText('priced');
   await expect(cell(page, PV)).toHaveText(/^-?[\d,]+$/);
   await expect(page.getByTestId('live-frame')).toContainText('simulated');
@@ -76,18 +87,19 @@ test('C43, C39: a leg\'s second level opens and closes on request, and a line wi
   await newWorkspace(page);
   await page.getByRole('button', { name: 'Add IRS' }).click();
   await settled(page, 'Lines');
-  // The group's caption says whether its second level is shown; its columns may lie beyond the Viewport.
-  await expect(lines(page).getByRole('columnheader', { name: 'Leg 1 ▸' })).toHaveCount(1);
+  // Each leg's Header Group draws ExGrid's toggle (ADR-0400); the page answers it with the leg's second level.
+  const toggle = lines(page).getByRole('button', { name: 'Expand Leg 1' });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(lines(page).getByRole('columnheader', { name: 'Day count' })).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Leg 1 details' }).click();
+  await toggle.click();
   await settled(page, 'Lines');
-  await expect(lines(page).getByRole('columnheader', { name: 'Leg 1 ▾' })).toHaveCount(1);
-  await expect(page.getByRole('button', { name: 'Leg 1 details' })).toHaveAttribute('aria-pressed', 'true');
-  await page.getByRole('button', { name: 'Leg 1 details' }).click();
+  await expect(lines(page).getByRole('button', { name: 'Collapse Leg 1' })).toHaveAttribute('aria-expanded', 'true');
+  await lines(page).getByRole('button', { name: 'Collapse Leg 1' }).click();
   await settled(page, 'Lines');
-  await expect(lines(page).getByRole('columnheader', { name: 'Leg 1 ▸' })).toHaveCount(1);
+  await expect(lines(page).getByRole('button', { name: 'Expand Leg 1' })).toHaveAttribute('aria-expanded', 'false');
 
-  await firstLine(page).getByRole('button', { name: 'Cashflows' }).click();
+  await firstLine(page).getByRole('button', { name: 'Flows' }).click();
   await expect(page.getByTestId('cashflows')).toContainText('generates no schedule');
 });
 
@@ -124,7 +136,10 @@ test('ADR-0006: a line is made from the command line, its arguments completed fr
   await page.keyboard.press('Enter');
   await expect(line).toBeHidden();
   await expect(page.getByTestId('workspace-summary')).toContainText('1 line(s)');
-  await expect(cell(page, STATUS)).not.toHaveText(/cannot|not priced/);
   await expect(cell(page, END)).toHaveText('10y');
   await expect(cell(page, LEG1_NOTIONAL)).toHaveText('3,000,000,000');
+  await settled(page, 'Lines');
+  // A line that can be priced has no issues.
+  await goTo(page, ISSUES);
+  await expect(cell(page, ISSUES)).toHaveText('');
 });

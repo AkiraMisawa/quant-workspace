@@ -120,11 +120,11 @@ test('ADR-0003, spine 6: a line the AI adds to the open workspace does not make 
   await settled(page, 'Lines');
 
   const row = page.getByLabel('Lines', { exact: true }).getByRole('row', { name: /^L\d+ / }).first();
-  const end = row.locator('[role=gridcell][aria-colindex="9"]');
+  const end = row.locator('[role=gridcell][aria-colindex="5"]');
   await expect(end).toHaveText('10y');
   await page.keyboard.press('ControlOrMeta+Shift+G');
   await page.keyboard.press('ControlOrMeta+Home');
-  for (let i = 0; i < 8; i++) await page.keyboard.press('ArrowRight');
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
   await page.keyboard.type('7y');
   await page.keyboard.press('Enter');
 

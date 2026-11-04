@@ -47,13 +47,22 @@ describe('the line grid', () => {
     expect(lineColumns({ leg1: true, leg2: false }).length - lineColumns({ leg1: false, leg2: false }).length).toBe(9);
   });
 
-  it('marks a collapsed leg whose hidden columns hold a value the user set, and only while it is collapsed', () => {
+  it('marks a collapsed leg whose hidden columns hold a value the user set, and only while it is collapsed (ExGrid ADR-0400)', () => {
     const edited = { ...line('L2'), userFields: ['leg2.lookback'] };
     const hides = hiddenEdits([line('L1'), edited]);
+    const leg2 = (open: boolean) => lineHeaderGroups({ leg1: false, leg2: open }, hides).find((g) => g.id === 'leg2')!;
 
-    expect(hides).toEqual({ leg1: false, leg2: true });
-    expect(lineHeaderGroups({ leg1: false, leg2: false }, hides).map((g) => g.label)).toContain('Leg 2 ▸ ●');
-    expect(lineHeaderGroups({ leg1: false, leg2: true }, hides).map((g) => g.label)).toContain('Leg 2 ▾');
+    expect(hides).toEqual({ leg1: 0, leg2: 1 });
+    expect(leg2(false)).toMatchObject({ label: 'Leg 2', expanded: false, hiddenMark: { state: 'modified' } });
+    expect(leg2(true).expanded).toBe(true);
+    expect(leg2(true).hiddenMark).toBeUndefined();
+  });
+
+  it('puts the inputs first and the result after them (owner, 2026-11-04)', () => {
+    const names = lineColumns({ leg1: false, leg2: false }).map((c) => c.name);
+    expect(names.slice(0, 3)).toEqual(['line', 'Actions', 'product']);
+    expect(names.indexOf('status')).toBeGreaterThan(names.indexOf('risk'));
+    expect(names.at(-1)).toBe('message');
   });
 
   it('marks figures of an older revision stale, and lists a line left out as not priced', () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Badge, Button, Group, Stack, Table, Text, TextInput } from '@mantine/core';
-import { GridSource, type GridActionEvent, type GridColumn, type GridEditIntent } from '@ex-grid/core';
+import { GridSource, type GridActionEvent, type GridColumn, type GridEditIntent, type HeaderGroupToggle } from '@ex-grid/core';
 import { ExGrid, type ExGridApi } from '@ex-grid/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '../../platform/api';
@@ -12,7 +12,7 @@ import type { FrameStream, RatesApi } from './api';
 import { registerRatesCommands } from './commands';
 import type { CashflowsView, HeldEdit, LiveFrame, PeriodView, RatesWorkspaceView, Resolution } from './contracts';
 import {
-  PINNED_COLUMNS, lineCellMessage, lineCellState, lineColumns, hiddenEdits, lineHeaderGroups, lineRows, parserOf, periodCellState, periodColumns, periodParserOf,
+  LEG_GROUPS, PINNED_COLUMNS, lineCellMessage, lineCellState, lineColumns, hiddenEdits, lineHeaderGroups, lineRows, parserOf, periodCellState, periodColumns, periodParserOf,
   type LineRow,
 } from './lines';
 
@@ -35,7 +35,7 @@ const describe = (error: unknown) => (error instanceof Error ? error.message : S
 /** Each column set made once: a new column is a new declaration, and every row paints again (ExGrid ADR-0003). */
 const columnSets = new Map<string, ReturnType<typeof lineColumns>>();
 const groupSets = new Map<string, ReturnType<typeof lineHeaderGroups>>();
-function layoutOf(leg1: boolean, leg2: boolean, hides: { readonly leg1: boolean; readonly leg2: boolean }) {
+function layoutOf(leg1: boolean, leg2: boolean, hides: { readonly leg1: number; readonly leg2: number }) {
   const key = `${leg1}/${leg2}`;
   let columns = columnSets.get(key);
   if (columns === undefined) columnSets.set(key, columns = lineColumns({ leg1, leg2 }));
@@ -138,6 +138,13 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
     void queue.push({ kind: 'line', line: intent.row.line, field: intent.column, value: parsed.value });
   }, [queue]);
 
+  // A leg's Header Group draws ExGrid's toggle; the page holds which legs are open and answers with the columns (ADR-0400).
+  const onLegToggled = useCallback((toggle: HeaderGroupToggle) => {
+    if (toggle.id === LEG_GROUPS.leg1) setExpanded((e) => ({ ...e, leg1: toggle.expanded }));
+    else if (toggle.id === LEG_GROUPS.leg2) setExpanded((e) => ({ ...e, leg2: toggle.expanded }));
+    else throw new Error(`The grid toggled a Header Group it was not given: ${toggle.id}.`);
+  }, []);
+
   const onAction = useCallback((event: GridActionEvent<LineRow>) => {
     if (event.action === 'cashflows') setDetail(event.row.line);
     else if (event.action === 'remove') {
@@ -230,10 +237,6 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
         <ValuationDate value={ws.valuationDate} disabled={busy !== undefined} onCommit={(d) => void changeValuationDate(d)} />
         <Button size="xs" variant="default" onClick={() => void queue.push({ kind: 'add', product: 'irs' })}>Add IRS</Button>
         <Button size="xs" variant="default" onClick={() => void queue.push({ kind: 'add', product: 'ccs' })}>Add CCS</Button>
-        <Button size="xs" variant={expanded.leg1 ? 'filled' : 'default'} aria-pressed={expanded.leg1}
-          onClick={() => setExpanded((e) => ({ ...e, leg1: !e.leg1 }))}>Leg 1 details</Button>
-        <Button size="xs" variant={expanded.leg2 ? 'filled' : 'default'} aria-pressed={expanded.leg2}
-          onClick={() => setExpanded((e) => ({ ...e, leg2: !e.leg2 }))}>Leg 2 details</Button>
         <Button size="xs" onClick={() => void price()} loading={busy === 'Pricing'} disabled={busy !== undefined && busy !== 'Pricing'}>Price</Button>
         <Button size="xs" color={subscription === undefined ? 'teal' : 'red'} variant="light" data-testid="live-toggle"
           onClick={() => void (subscription === undefined ? startLive() : stopLive(subscription))}>
@@ -264,7 +267,7 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
       <div className="qwb-grid" aria-label="Lines">
         <ExGrid<LineRow> ref={grid} columns={layout.columns} headerGroups={layout.groups} source={source} onEdit={onEdit} onAction={onAction}
           cellState={lineCellState} cellMessage={lineCellMessage} density="compact" viewportWidth="stretch" viewportHeight={height}
-          pinnedColumnCount={PINNED_COLUMNS} locale="en-US" />
+          pinnedColumnCount={PINNED_COLUMNS} locale="en-US" onHeaderGroupToggled={onLegToggled} />
       </div>
       {detail !== undefined && ws.lines.some((l) => l.line === detail) && (
         <Cashflows workspaceId={workspaceId} line={detail} revision={ws.revision} api={api} onClose={() => setDetail(undefined)}
