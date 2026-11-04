@@ -53,7 +53,7 @@ Every provider is simulated. All data is synthetic and labelled as such on scree
 
 ### ExGrid
 
-- Pinned to ex-grid commit `3bf523dbb1bdaf747a6632c2c80d8f080a03f468` (moved from `79c0c70` on 2026-10-27 for the fetching source's `notifyChanged`) (`vendor/ex-grid/PIN`), through `@ex-grid/react`.
+- `@ex-grid/core`, `@ex-grid/data` and `@ex-grid/react` `0.2.0-beta.3` from npm (since 2026-11-04; before that, tarballs packed from ex-grid commit `3bf523d` in `vendor/ex-grid/`), through `@ex-grid/react`. The stylesheet is `@ex-grid/core/styles.css`.
 - A key sent to a newly drawn grid before it carries its Settled Mark is lost, by ExGrid's own contract. Browser tests wait for the mark, as ex-grid's own tests do.
 - ExGrid's TypeScript core has no touch support yet.
 

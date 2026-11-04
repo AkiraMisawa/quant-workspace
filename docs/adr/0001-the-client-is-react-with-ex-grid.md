@@ -41,11 +41,13 @@ it names client technology; the behaviour it describes is unchanged.
 
 **DEFAULT (record a reason before changing):**
 
-- **Consuming ExGrid.** `@ex-grid/*` is not published. Pin an ex-grid commit, build its npm
-  workspace, and install the packed tarballs into this repository; copy the stylesheets the packages
-  need (`ex-grid.min.css` and siblings, which live in ex-grid's NuGet projects, not in the npm
-  packages) from the same commit. Record the commit in `IMPLEMENTATION_STATUS.md`. Moving the pin is
-  a deliberate change.
+- **Consuming ExGrid.** Install `@ex-grid/*` from npm at one exact prerelease version for the whole
+  family (the packages depend on each other at exactly their own version), and import the stylesheet
+  `@ex-grid/core` ships (`@ex-grid/core/styles.css`). Record the version in `IMPLEMENTATION_STATUS.md`.
+  Moving the version is a deliberate change.
+  *(Changed 2026-11-04: ex-grid published its packages to npm as `0.2.0-beta.3`, with the stylesheet
+  inside `@ex-grid/core`. Until then `@ex-grid/*` was unpublished, and this project packed tarballs and
+  copied `ex-grid.min.css` from a pinned ex-grid commit into `vendor/ex-grid/`; both are removed.)*
 - **Theming ExGrid.** There is no Mantine wrapper for ExGrid (`@ex-grid/mui` is planned for MUI only).
   Map the Mantine theme onto ExGrid's `--ex-` Visual Tokens in one module of this repository, owning
   no geometry and no DOM inside the grid's root, as ex-grid's ADR-0030 limits any wrapper.

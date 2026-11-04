@@ -11,7 +11,6 @@ Start with `START_HERE.md` and `docs/00-decisions.md`; what runs today is in
 |---|---|
 | `server/` | ASP.NET Core host and the composition kernel (`Workbench.slnx`, .NET 10) |
 | `client/` | React + TypeScript client (Vite, Mantine, TanStack Query, Zustand, ExGrid React) |
-| `vendor/ex-grid/` | ExGrid packages and stylesheet packed from a pinned ex-grid commit (`PIN`) |
 | `docs/` | Requirements, ADRs (`docs/adr/`), plans and reviews |
 
 ## Commands
@@ -49,7 +48,7 @@ installed for another Playwright version, name it with `PLAYWRIGHT_CHROMIUM=/pat
 `WORKBENCH_PORT` moves the host to another port. Each browser run starts the host on a database file of its own in the
 temporary directory (`WORKBENCH_DB` names one instead).
 
-To re-vendor ExGrid from another commit: check out the commit in an ex-grid clone and run `tools/ex-grid/vendor.sh <ex-grid checkout>`; it writes the commit into `vendor/ex-grid/PIN`.
+ExGrid comes from npm at one exact prerelease version (`@ex-grid/core`, `data` and `react` in `client/package.json`). To move it, set all three to the same new version and run `npm install` in `client/`; the packages must move together.
 
 ## Rules
 
