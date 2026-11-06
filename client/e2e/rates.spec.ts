@@ -134,8 +134,9 @@ test('ADR-0006: a line is made from the command line, its arguments completed fr
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('command-problems')).toHaveText('Missing: fixed-frequency, float-frequency.');
 
-  await page.keyboard.type(' 12m 12m spread=0');
-  await expect(page.getByTestId('command-pending')).toContainText('spread=0');
+  // No rate and no spread: an at-the-money swap (C47), the fixed leg solved at par.
+  await page.keyboard.type(' 12m 12m');
+  await expect(page.getByTestId('command-pending')).toContainText('pay12m12m');
   await page.keyboard.press('Enter');
   await expect(line).toBeHidden();
   await expect(page.getByTestId('workspace-summary')).toContainText('1 line(s)');

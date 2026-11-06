@@ -44,6 +44,8 @@ third.
       supplies nothing. The development profiles' templates say `unconfirmed`, as their conventions do.
    b. **The workspace's defaults**, set by the user in the workspace (currency, notional, direction). This is the
       user's own data, as ADR-0003's main CSA is.
+   An IRS's own quotes are already a confirmed default (C47, 2026-11-06): with no quote it is at the money,
+   spread 0 and the fixed leg at par, whatever its profile.
    c. Nothing. The field stays empty and is refused by name if it is required.
    Every defaulted field is recorded in the `Create` edit with its source (`profile:jpy-tona@v/irs`,
    `workspace`). The row marks it as defaulted, distinct from what the user typed and from what the AI wrote. A

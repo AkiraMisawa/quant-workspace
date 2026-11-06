@@ -155,8 +155,8 @@ const parsed = (field: string) => (value: string): string | undefined => {
 
 /**
  * `new irs`: the basic terms of an IRS (C40), one leg fixed and one floating on the same currency, index and
- * notional. A quote left out is the leg solved at par; one of rate= or spread= is needed (a line with both legs at
- * par is refused, by the server, with its reason).
+ * notional. With no quote it is at the money (C47): the server puts no spread on the floating leg and solves the
+ * fixed leg at par; rate= gives an off-market fixed rate, spread= a spread.
  */
 function irsArguments(conventions: () => readonly { readonly currency: string; readonly index: string }[]): CommandArgument[] {
   return [
@@ -167,8 +167,8 @@ function irsArguments(conventions: () => readonly { readonly currency: string; r
     { name: 'direction', required: true, complete: () => [{ value: 'pay', detail: 'pay fixed' }, { value: 'receive', detail: 'receive fixed' }], check: parsed('direction') },
     { name: 'fixed-frequency', required: true, complete: () => FREQUENCIES, check: parsed('leg1.paymentFrequency') },
     { name: 'float-frequency', required: true, complete: () => FREQUENCIES, check: parsed('leg2.paymentFrequency') },
-    { name: 'rate', required: false, hint: 'the fixed rate in %; left out, it is solved at par', check: parsed('leg1.quote') },
-    { name: 'spread', required: false, hint: 'the floating spread in %; left out, it is solved at par', check: parsed('leg2.quote') },
+    { name: 'rate', required: false, hint: 'the fixed rate in %; left out, solved at par (at the money, C47)', check: parsed('leg1.quote') },
+    { name: 'spread', required: false, hint: 'the floating spread in %; left out, 0 (at the money, C47)', check: parsed('leg2.quote') },
   ];
 }
 
