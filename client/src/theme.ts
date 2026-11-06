@@ -1,7 +1,10 @@
 import { createTheme, type MantineColorsTuple } from '@mantine/core';
+import { mantineDefaultFont } from '@ex-grid/mantine';
 
 // Quant Workbench's own look: dense, dark-first, with a signal amber for focus and primary actions and
 // tabular figures everywhere numbers line up. Mantine supplies the components; this supplies the system.
+// docs/design-guidelines.md says how to use it, and ADR-0009 why: one Control Height (Mantine `xs`, 30px) for
+// every control in a toolbar, spacing on a 4px grid, the type ramp below, and colour only from the theme.
 
 const signal: MantineColorsTuple = [
   '#fff6e0', '#ffeccb', '#ffd79a', '#ffc164', '#ffae36', '#ffa218', '#ff9c03', '#e38800', '#ca7800', '#af6700',
@@ -15,12 +18,17 @@ export const theme = createTheme({
   primaryColor: 'signal',
   primaryShade: { light: 7, dark: 5 },
   colors: { signal, dark: ['#c9d1e0', '#a6b0c3', '#7d889e', '#5a6478', '#3a4256', '#2a3142', '#1d2331', '#151a25', '#10141d', '#0b0e15'], ink },
-  fontFamily: 'Inter, "Segoe UI", system-ui, -apple-system, sans-serif',
+  // The grid's cells are drawn in Mantine's default stack, the face ExGrid has widths for (ex-grid ADR-0390 §9). The
+  // rest of the workbench takes the same stack, so a figure reads in one face in a grid and beside it. Inter was named
+  // here before ADR-0009 and never loaded, so each platform drew its own fallback.
+  fontFamily: mantineDefaultFont.family,
   fontFamilyMonospace: '"JetBrains Mono", "SFMono-Regular", Consolas, monospace',
   defaultRadius: 'xs',
   fontSizes: { xs: '11px', sm: '12px', md: '13px', lg: '15px', xl: '18px' },
   spacing: { xs: '4px', sm: '8px', md: '12px', lg: '16px', xl: '24px' },
   headings: { fontWeight: '600' },
-  focusRing: 'always',
+  // The ring shows on :focus-visible: always for the keyboard, never as a leftover of a mouse click or a tap
+  // (ADR-0009). ExGrid draws its own Focus inside the grid.
+  focusRing: 'auto',
   cursorType: 'pointer',
 });

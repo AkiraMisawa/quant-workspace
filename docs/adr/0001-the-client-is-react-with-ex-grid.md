@@ -48,9 +48,16 @@ it names client technology; the behaviour it describes is unchanged.
   *(Changed 2026-11-04: ex-grid published its packages to npm as `0.2.0-beta.3`, with the stylesheet
   inside `@ex-grid/core`. Until then `@ex-grid/*` was unpublished, and this project packed tarballs and
   copied `ex-grid.min.css` from a pinned ex-grid commit into `vendor/ex-grid/`; both are removed.)*
-- **Theming ExGrid.** There is no Mantine wrapper for ExGrid (`@ex-grid/mui` is planned for MUI only).
-  Map the Mantine theme onto ExGrid's `--ex-` Visual Tokens in one module of this repository, owning
-  no geometry and no DOM inside the grid's root, as ex-grid's ADR-0030 limits any wrapper.
+- **Theming ExGrid.** Every grid is drawn by ExGrid's Mantine Wrapper, `@ex-grid/mantine`, at the
+  family's version, through one component of this repository (`client/src/platform/grid/WorkbenchGrid.tsx`),
+  with its stylesheet `@ex-grid/mantine/styles.css` loaded after Mantine's and the core's. The Wrapper
+  maps the Mantine theme onto ExGrid's `--ex-` Visual Tokens in both schemes, draws the grid's menus,
+  filter panel and editor with Mantine's components, and draws the cells in the font it has widths for
+  (ex-grid ADR-0390 §9). This repository sets no `--ex-` token of its own.
+  *(Changed 2026-11-06, ADR-0009, at the owner's request: until then there was no Mantine Wrapper
+  (`@ex-grid/mui` was the only one planned), and `client/src/theme.css` mapped the theme onto the tokens
+  by hand. That mapping also set `--ex-font-family` to the theme's font, whose widths the grid did not
+  have, so a figure's `####` was judged for another face.)*
 - **Touch.** ExGrid's TypeScript core has no touch input yet. Grid touch support is ex-grid's work;
   this project reports what it needs and does not patch around the grid.
 

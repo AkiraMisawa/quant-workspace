@@ -1,18 +1,18 @@
 import { useCallback, useState } from 'react';
-import { ActionIcon, Alert, AppShell, Button, CloseButton, Drawer, Group, Kbd, Loader, ScrollArea, Stack, Tabs, Text, Title, Tooltip, em } from '@mantine/core';
+import { Alert, AppShell, CloseButton, Drawer, Group, Kbd, Loader, ScrollArea, Stack, Tabs, Text, em } from '@mantine/core';
 import { useMediaQuery } from '@mantine/hooks';
 import { useQuery } from '@tanstack/react-query';
 import type { Api } from './platform/api';
 import { ViewRenderer } from './platform/views/ViewRenderer';
 import { WorkspaceProvider, useWorkspace } from './platform/workspace/WorkspaceProvider';
 import type { Panel } from './platform/workspace/workspaceStore';
-import { CommandPalette, openPalette } from './shell/CommandPalette';
-import { ContextBar } from './shell/ContextBar';
+import { AppHeader, HEADER_HEIGHT } from './shell/AppHeader';
+import { CommandPalette } from './shell/CommandPalette';
+import { ContextIssues } from './shell/ContextBar';
 import { RunDialog } from './shell/RunDialog';
 import { AppDialogs, AppPanel } from './apps';
 import { RunPanel } from './shell/RunPanel';
 import { registerGridFocus } from './shell/focus';
-import { useMantineColorScheme } from '@mantine/core';
 import { AiProvider, useAi, useAiContext } from './ai/AiProvider';
 import { AiPane } from './ai/AiPane';
 import type { AgentTransport } from './ai/agui';
@@ -40,35 +40,19 @@ export function App({ api, initialContext, agent }: {
 }
 
 function Shell({ notice, clearNotice }: { readonly notice: string | undefined; readonly clearNotice: () => void }) {
-  const { colorScheme, toggleColorScheme } = useMantineColorScheme();
   const aiOpen = useAi((s) => s.open);
   const ai = useAiContext().store;
-  // The AI pane is beside the panels (ADR-0007 §7). On a phone, where the header wraps to its own height and there is
-  // no room beside, it is a drawer over them that does not take the keyboard when it opens.
+  // The AI pane is beside the panels (ADR-0007 §7). On a phone, where there is no room beside, it is a drawer over
+  // them that does not take the keyboard when it opens.
   const phone = useMediaQuery(`(max-width: ${em(767.98)})`, false, { getInitialValueInEffect: false });
   return (
-    <AppShell header={{ height: { base: 'auto', sm: 56 } }} padding="sm"
+    <AppShell header={{ height: HEADER_HEIGHT }} padding="sm"
       aside={{ width: { sm: 340, lg: 400 }, breakpoint: 'sm', collapsed: { mobile: true, desktop: !aiOpen || phone } }}>
-      <AppShell.Header px="sm" py={6}>
-        <Group justify="space-between" wrap="wrap" gap="xs" h="100%">
-          <Group gap="sm" wrap="nowrap">
-            <Title order={1} size="sm" c="signal" style={{ letterSpacing: '0.08em' }}>QUANT WORKBENCH</Title>
-            <Button size="compact-xs" variant="default" onClick={openPalette} aria-label="Open command line"
-              rightSection={<Kbd size="xs">Ctrl K</Kbd>}>Commands</Button>
-          </Group>
-          <Group gap="xs" wrap="wrap">
-            <ContextBar />
-            <Button size="compact-xs" variant={aiOpen ? 'filled' : 'default'} onClick={() => ai.getState().setOpen(!aiOpen)}
-              aria-pressed={aiOpen} aria-label={aiOpen ? 'Hide the AI pane' : 'Show the AI pane'}>AI</Button>
-            <Tooltip label="Toggle theme (toggle theme)">
-              <ActionIcon variant="default" size="sm" onClick={toggleColorScheme} aria-label="Toggle theme">
-                {colorScheme === 'dark' ? '☀' : '☾'}
-              </ActionIcon>
-            </Tooltip>
-          </Group>
-        </Group>
+      <AppShell.Header>
+        <AppHeader />
       </AppShell.Header>
       <AppShell.Main>
+        <ContextIssues />
         {notice !== undefined && (
           <Alert color="yellow" variant="light" mb="sm" role="status" withCloseButton onClose={clearNotice} data-testid="notice">{notice}</Alert>
         )}

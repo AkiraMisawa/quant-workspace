@@ -41,6 +41,7 @@ This package supersedes older notes where they disagree about authoritative XVA 
 - Wire contracts and examples: `docs/10-api-contracts.md`, `contracts/`, `examples/`.
 - Acceptance and delivery: `docs/11-acceptance.md`, `docs/12-implementation-plan.md`.
 - Questions and technical evidence: `docs/13-open-questions.md`, `references/sources.md`.
+- Client look, layout, alignment and responsive behaviour: `docs/design-guidelines.md` (ADR-0009). Read it before a UI change.
 
 ## Working rules
 

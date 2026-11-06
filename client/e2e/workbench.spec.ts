@@ -96,3 +96,32 @@ test('UX03: on a phone-width screen the page does not scroll sideways and runs b
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBe(0);
 });
+
+// ADR-0009: what only a browser shows. A header control a few pixels off its neighbours, or a header taller than the
+// space AppShell keeps for it, still passes every other test; both were on screen before ADR-0009.
+for (const width of [1440, 992, 768, 390]) {
+  test(`ADR-0009, UX03: at ${width}px every header control is one Control Height on a shared row, and the header covers nothing`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 700 });
+    await open(page);
+    const header = page.locator('header');
+    const controls = header.locator('button, input:visible');
+    // Commands, Region, As of, AI and the theme.
+    await expect(controls).toHaveCount(5);
+    const boxes = await controls.evaluateAll((elements) => elements.map((e) => {
+      const r = e.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, right: r.right };
+    }));
+    // One Control Height: Mantine `xs`, 30px.
+    for (const box of boxes) expect(box.bottom - box.top).toBeCloseTo(30, 0);
+    // Every control sits on one of at most two rows, its top and bottom exactly those of the row.
+    const rows = [...new Set(boxes.map((b) => Math.round(b.top)))];
+    expect(rows.length).toBeLessThanOrEqual(width >= 992 ? 1 : 2);
+    // Nothing reaches past the right edge, and the main area starts below the header.
+    for (const box of boxes) expect(box.right).toBeLessThanOrEqual(width);
+    const headerBottom = await header.evaluate((e) => e.getBoundingClientRect().bottom);
+    const lowest = Math.max(...boxes.map((b) => b.bottom));
+    expect(lowest).toBeLessThanOrEqual(headerBottom);
+    const firstLine = await page.getByText('Nothing open yet.').evaluate((e) => e.getBoundingClientRect().top);
+    expect(firstLine).toBeGreaterThanOrEqual(headerBottom);
+  });
+}

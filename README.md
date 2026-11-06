@@ -48,7 +48,7 @@ installed for another Playwright version, name it with `PLAYWRIGHT_CHROMIUM=/pat
 `WORKBENCH_PORT` moves the host to another port. Each browser run starts the host on a database file of its own in the
 temporary directory (`WORKBENCH_DB` names one instead).
 
-ExGrid comes from npm at one exact prerelease version (`@ex-grid/core`, `data` and `react` in `client/package.json`). To move it, set all three to the same new version and run `npm install` in `client/`; the packages must move together.
+ExGrid comes from npm at one exact prerelease version (`@ex-grid/core`, `data`, `react` and `mantine` in `client/package.json`). To move it, set all four to the same new version and run `npm install` in `client/`; the packages must move together.
 
 ## Rules
 
