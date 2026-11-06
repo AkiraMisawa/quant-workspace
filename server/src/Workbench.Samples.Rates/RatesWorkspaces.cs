@@ -112,7 +112,7 @@ public sealed record FrameIdentity(int SubscriptionRevision, long InputRevision,
 /// and carries the edits; the module derives the schedules.
 /// </summary>
 public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore store, RunService runs, RatesLiveService live, MarketFeed market,
-    ConventionRegistry conventions)
+    ConventionRegistry conventions, IRatesPricingProvider provider)
 {
     /// <summary>The source a Rates workspace acquires: none; everything priced is created or derived in it (ADR-0004).</summary>
     public static readonly ISourceVersion NoAcquiredSource = new EmptySource("rates:none");
@@ -289,7 +289,7 @@ public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore stor
         LiveInput? input = null;
         var freeze = workspaces.Freeze(workspaceId, revision, state =>
         {
-            input = RatesAcceptedInput.Of(state, conventions);
+            input = RatesAcceptedInput.Of(state, conventions, provider);
             var priced = input.Lines.Select(l => l.RowKey).ToHashSet();
             return entity => priced.Contains(LineOf(entity));
         });
@@ -306,7 +306,7 @@ public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore stor
     public string StartLive(string workspaceId, string user, RunOrigin origin = RunOrigin.Pricer)
     {
         var state = Owned(workspaceId, user);
-        return live.Start(user, workspaceId, RatesAcceptedInput.Of(state, conventions), origin);
+        return live.Start(user, workspaceId, RatesAcceptedInput.Of(state, conventions, provider), origin);
     }
 
     public void StopLive(string subscriptionId, string user, RunOrigin origin = RunOrigin.Pricer) =>
@@ -365,7 +365,7 @@ public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore stor
     {
         var subscriptions = live.OnWorkspace(workspaceId);
         if (subscriptions.Count == 0) return state;
-        var input = RatesAcceptedInput.Of(state, conventions);
+        var input = RatesAcceptedInput.Of(state, conventions, provider);
         foreach (var (owner, id) in subscriptions) live.InputChanged(owner, id, input);
         return state;
     }

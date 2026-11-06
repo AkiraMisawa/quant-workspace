@@ -14,6 +14,14 @@ public static class RatesProducts
     public const string Ccs = "rates.ccs";
     public const string Version = "1.0.0";
 
+    /// <summary>The described product a line is, by its <c>product</c> field (ADR-0008 §8).</summary>
+    public static string Of(EffectiveLine line) => line.Fields.GetValueOrDefault(LineFields.Product)?.GetValue<string>() switch
+    {
+        "irs" => Irs,
+        "ccs" => Ccs,
+        var other => throw new InvalidOperationException($"Line {line.Line} names product {other ?? "(none)"}, which Rates does not describe."),
+    };
+
     static readonly IReadOnlyDictionary<string, string> Directions = new Dictionary<string, string>
     {
         ["pay"] = "pay", ["p"] = "pay", ["payer"] = "pay", ["receive"] = "receive", ["rec"] = "receive", ["r"] = "receive", ["receiver"] = "receive",

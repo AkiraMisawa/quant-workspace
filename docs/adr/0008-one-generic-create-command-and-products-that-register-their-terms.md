@@ -58,6 +58,11 @@ third.
 5. **Commands stay thin wrappers.** `new irs …` and `new ccs …` are the generic command with its product named.
    `rates.line.create` (ADR-0005) becomes `entity.create` with `product: rates.irs`. The AI tool takes the same
    terms as the command line, so it too can leave out what a default supplies.
+   *(Implemented 2026-11-06. `entity.create` acts on a workspace that exists; a new Rates workspace is made first by
+   `rates.workspace.create` (valuation date only), since making an app's workspace is the app's, not the kernel's.
+   One consequence, recorded rather than hidden: `rates.line.create` made the workspace only once the terms would
+   price, and now a request whose line is refused leaves the empty workspace it made. The agent's answer to the
+   refusal puts the line into that same workspace, so it is not made twice.)*
 6. **The server owns the reading.** The client reads words by form only to complete and to show the pending
    command. The server reads them again from the registration and decides (ADR-0003). A registration the client
    has not loaded leaves the command unavailable, never guessed.
@@ -73,6 +78,8 @@ third.
    Price finds the provider for each line's product; a line whose product no provider prices is listed as not
    priced with that reason, never priced by another provider and never by a mock (CLAUDE.md: no silent fallback).
    A product may therefore be described, created and saved before anything prices it.
+   *(Implemented 2026-11-06: `IRatesPricingProvider.Products` names each product and description version it prices;
+   the accepted input lists any other line under `notPriced` with "No pricing provider prices rates.ccs 1.0.0; …".)*
 
 Scope of the first implementation (owner, 2026-11-06): the kernel's descriptors, catalog port, word reader and
 generic create; IRS and CCS described by the Rates module; the provider declaring both. Loading the engine's catalog,

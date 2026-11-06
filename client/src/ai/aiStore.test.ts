@@ -7,13 +7,13 @@ import { slashMatches } from './AiPane';
 // ADR-0007 §7: one card per request, built from the run's events; a result applies its effect once; a request is not
 // sent while another is answered; the chat's own commands are found by `/`.
 
-const created = JSON.stringify({ status: 'done', capability: 'rates.line.create', version: '1.0.0', outputs: { line: { workspaceId: 'W-1', valuationDate: '2026-10-27' } } });
+const created = JSON.stringify({ status: 'done', capability: 'rates.workspace.create', version: '1.0.0', outputs: { workspace: { workspaceId: 'W-1', revision: 2, valuationDate: '2026-10-27' } } });
 const refused = JSON.stringify({ status: 'refused', capability: 'rates.live.start', code: 'ValidationFailed', issues: [{ code: 'Required', path: '/inputs/workspace/workspaceId', message: 'workspaceId is required.' }] });
 
 const run: BaseEvent[] = [
   { type: EventType.RUN_STARTED, threadId: 't', runId: 'r', metadata: { workbench: { runtime: 'scripted', label: 'scripted · no model', simulated: true } } } as BaseEvent,
-  { type: EventType.TOOL_CALL_START, toolCallId: 'c-1', toolCallName: 'rates_line_create', parentMessageId: 'm' } as BaseEvent,
-  { type: EventType.TOOL_CALL_ARGS, toolCallId: 'c-1', delta: '{"terms":{}}' } as BaseEvent,
+  { type: EventType.TOOL_CALL_START, toolCallId: 'c-1', toolCallName: 'rates_workspace_create', parentMessageId: 'm' } as BaseEvent,
+  { type: EventType.TOOL_CALL_ARGS, toolCallId: 'c-1', delta: '{"request":{}}' } as BaseEvent,
   { type: EventType.TOOL_CALL_END, toolCallId: 'c-1' } as BaseEvent,
   { type: EventType.TOOL_CALL_RESULT, messageId: 'm-2', toolCallId: 'c-1', content: created, role: 'tool' } as BaseEvent,
   { type: EventType.TOOL_CALL_START, toolCallId: 'c-2', toolCallName: 'rates_live_start', parentMessageId: 'm-3' } as BaseEvent,
@@ -44,8 +44,8 @@ describe('the AI pane', () => {
     const card = run.reduce(applyEvent, newCard('r', 'make a swap and tick it'));
     expect(card.status).toBe('done');
     expect(card.runtime).toEqual({ label: 'scripted · no model', simulated: true });
-    expect(card.steps.map((s) => [s.tool, s.outcome?.status])).toEqual([['rates_line_create', 'done'], ['rates_live_start', 'refused']]);
-    expect(card.steps[0]!.args).toBe('{"terms":{}}');
+    expect(card.steps.map((s) => [s.tool, s.outcome?.status])).toEqual([['rates_workspace_create', 'done'], ['rates_live_start', 'refused']]);
+    expect(card.steps[0]!.args).toBe('{"request":{}}');
     expect(card.reply).toBe('rates.live.start was refused.');
   });
 
@@ -69,7 +69,7 @@ describe('the AI pane', () => {
     expect(input.tools).toEqual([]);
     expect(input.context).toEqual(context);
     expect(onDone).toHaveBeenCalledTimes(1);
-    expect(onDone.mock.calls[0]![0]).toMatchObject({ capability: 'rates.line.create' });
+    expect(onDone.mock.calls[0]![0]).toMatchObject({ capability: 'rates.workspace.create' });
     expect(store.getState().cards[0]!.opened).toEqual([{ panelId: 'panel-9', title: 'Rates 2026-10-27' }]);
     expect(store.getState().open).toBe(true);
   });

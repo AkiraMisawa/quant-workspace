@@ -33,7 +33,7 @@ public class RatesApplicationTests
         var store = new InMemoryDataStore();
         var runs = new RunService(new CompositionRegistry([new RatesModule(provider, market.Resolve)]), store, TimeProvider.System);
         var workspaces = new WorkspaceService(new Dictionary<string, IEditRules> { [RatesEditRules.App] = new RatesEditRules(Conventions) }, TimeProvider.System);
-        return new(new RatesWorkspaces(workspaces, store, runs, live, feed, Conventions), runs, store, feed, live);
+        return new(new RatesWorkspaces(workspaces, store, runs, live, feed, Conventions, provider), runs, store, feed, live);
     }
 
     /// <summary>A workspace with one complete five-year IRS paying par fixed against the test overnight index, and one empty line.</summary>

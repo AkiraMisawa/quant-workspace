@@ -8,10 +8,23 @@ public sealed record RatesBatchInput(long InputRevision, DateOnly ValuationDate,
 
 public sealed record RatesBatchResult(string Provider, string CalculationMode, IReadOnlyList<RowResult> Rows);
 
+/// <summary>A product, at a version of its description, that a provider can price (ADR-0008 §8).</summary>
+public sealed record PricedProduct(string Id, string Version)
+{
+    public override string ToString() => $"{Id} {Version}";
+}
+
 /// <summary>The rates pricing port (docs/07 §4). A real worker and the fake implement the same contract.</summary>
 public interface IRatesPricingProvider
 {
     string Name { get; }
+
+    /// <summary>
+    /// The products this provider prices (ADR-0008 §8). A line of any other product is not sent to it: it is listed
+    /// as not priced with that reason, never priced by another provider or by a mock.
+    /// </summary>
+    IReadOnlyList<PricedProduct> Products { get; }
+
     Task<RatesBatchResult> PriceBatchAsync(RatesBatchInput input, CancellationToken cancellationToken);
 }
 
@@ -34,6 +47,7 @@ public sealed class FakeRatesPricing : IRatesPricingProvider
 {
     public const string Mode = "simulated";
     public string Name => "fake-rates/1";
+    public IReadOnlyList<PricedProduct> Products { get; } = [new(RatesProducts.Irs, RatesProducts.Version), new(RatesProducts.Ccs, RatesProducts.Version)];
 
     public Task<RatesBatchResult> PriceBatchAsync(RatesBatchInput input, CancellationToken cancellationToken)
     {

@@ -8,6 +8,8 @@ async function newWorkspace(page: Page, registration: string, trades: number): P
   const dialog = page.getByRole('dialog', { name: 'New XVA workspace' });
   await expect(dialog.getByRole('combobox', { name: 'Counterparty' })).toBeFocused();
   await page.keyboard.type(registration);
+  // The counterparties load as the dialog opens: the option is read once it is listed, never before.
+  await expect(page.getByRole('option', { name: new RegExp(`^${registration} `) })).toBeVisible();
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await expect(dialog.getByRole('combobox', { name: 'Counterparty' })).toHaveValue(new RegExp(`^${registration} `));

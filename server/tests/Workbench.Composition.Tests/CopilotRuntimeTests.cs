@@ -53,16 +53,11 @@ public class CopilotRuntimeTests(WorkbenchFactory factory) : IClassFixture<Workb
 
     WebApplicationFactory<Program> Workbench => workbench!;
 
-    static readonly JsonObject SwapTerms = new()
+    static readonly JsonObject NewWorkspace = new() { ["request"] = new JsonObject { ["valuationDate"] = "2026-10-27" } };
+
+    static JsonObject Swap(string workspaceId) => new()
     {
-        ["terms"] = new JsonObject
-        {
-            ["product"] = "irs", ["valuationDate"] = "2026-10-27", ["end"] = "10y", ["direction"] = "pay",
-            ["leg1.paymentFrequency"] = "12m", ["leg2.paymentFrequency"] = "12m",
-            ["leg2.quoteKind"] = "FloatSpreadPercent", ["leg2.quote"] = 0,
-            ["leg1.currency"] = "JPY", ["leg1.index"] = "TONA", ["leg1.notional"] = 1_000_000_000,
-            ["leg2.currency"] = "JPY", ["leg2.index"] = "TONA", ["leg2.notional"] = 1_000_000_000,
-        },
+        ["request"] = new JsonObject { ["product"] = "rates.irs", ["workspaceId"] = workspaceId, ["terms"] = "jpy 10y 1bn pay" },
     };
 
     static JsonObject Input(string threadId, string runId, string messageId, string text, params (string Description, string Value)[] context) => new()
@@ -95,7 +90,8 @@ public class CopilotRuntimeTests(WorkbenchFactory factory) : IClassFixture<Workb
         string? seen = null;
         model.Answer = async (turn, sink, ct) =>
         {
-            seen = await sink.CallAsync("call-1", "rates_line_create", SwapTerms.ToJsonString(), ct);
+            var made = (JsonObject)JsonNode.Parse(await sink.CallAsync("call-1", "rates_workspace_create", NewWorkspace.ToJsonString(), ct))!;
+            seen = await sink.CallAsync("call-2", "entity_create", Swap(made["outputs"]!["workspace"]!["workspaceId"]!.GetValue<string>()).ToJsonString(), ct);
             sink.Say("Made the swap.");
         };
         var before = Workspaces();
@@ -107,12 +103,12 @@ public class CopilotRuntimeTests(WorkbenchFactory factory) : IClassFixture<Workb
         Assert.Equal("copilot", workbenchMeta["runtime"]!.GetValue<string>());
         Assert.Equal("Copilot · fake-model", workbenchMeta["label"]!.GetValue<string>());
         Assert.False(workbenchMeta["simulated"]!.GetValue<bool>());
-        Assert.Equal(["rates_line_create"], events.Where(e => e["type"]!.GetValue<string>() == "TOOL_CALL_START").Select(e => e["toolCallName"]!.GetValue<string>()));
+        Assert.Equal(["rates_workspace_create", "entity_create"], events.Where(e => e["type"]!.GetValue<string>() == "TOOL_CALL_START").Select(e => e["toolCallName"]!.GetValue<string>()));
         Assert.Equal("Made the swap.", Reply(events));
 
         var result = (JsonObject)JsonNode.Parse(seen!)!;
         Assert.Equal("done", result["status"]!.GetValue<string>());
-        var id = result["outputs"]!["line"]!["workspaceId"]!.GetValue<string>();
+        var id = result["outputs"]!["entity"]!["workspaceId"]!.GetValue<string>();
         Assert.Equal(before + 1, Workspaces());
         var log = Workbench.Services.GetRequiredService<WorkspaceService>().Find(id)!.Log;
         Assert.All(log.Where(e => e.Kind != EditKind.Derive), e => Assert.Equal(RunOrigin.Ai, e.Origin));
@@ -120,7 +116,8 @@ public class CopilotRuntimeTests(WorkbenchFactory factory) : IClassFixture<Workb
         // The host was offered the workbench's commands and nothing else, with the request's context and no history yet.
         var turn = Assert.Single(model.Turns);
         Assert.Equal("fake-model", turn.Model);
-        Assert.Contains("rates_line_create", turn.Tools.Select(t => t.Name));
+        Assert.Contains("entity_create", turn.Tools.Select(t => t.Name));
+        Assert.DoesNotContain("rates_line_create", turn.Tools.Select(t => t.Name));
         Assert.All(turn.Tools, t => Assert.NotNull(Workbench.Services.GetRequiredService<AgentToolGateway>().CapabilityOf(t.Name)));
         Assert.Contains("- Active panel: Pricing DB", turn.Prompt, StringComparison.Ordinal);
         Assert.Null(turn.Earlier);

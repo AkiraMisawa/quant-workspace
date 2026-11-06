@@ -7,7 +7,7 @@ import type { Panel, WorkspaceState } from '../platform/workspace/workspaceStore
 // behind the active one; it never activates a panel or moves the keyboard.
 
 export interface AiEffectTarget {
-  readonly workspace: Pick<WorkspaceState, 'openPanelBehind'>;
+  readonly workspace: Pick<WorkspaceState, 'openPanelBehind' | 'panels'>;
   readonly queryClient: QueryClient;
 }
 

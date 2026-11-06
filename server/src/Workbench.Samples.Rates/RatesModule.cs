@@ -50,13 +50,23 @@ public static class RatesAcceptedInput
         return built;
     }
 
-    /// <summary>The input of one revision: its priceable lines, and every other line with the reasons it is not priced.</summary>
-    public static LiveInput Of(WorkspaceState state, ConventionRegistry conventions)
+    /// <summary>
+    /// The input of one revision: its priceable lines whose product the provider prices, and every other line with the
+    /// reasons it is not priced (ADR-0008 §8: a product nobody prices is said so, never priced by something else).
+    /// </summary>
+    public static LiveInput Of(WorkspaceState state, ConventionRegistry conventions, IRatesPricingProvider provider)
     {
         var lines = RatesMaterialiser.Lines(state, conventions);
+        string? Unpriced(EffectiveLine line)
+        {
+            var product = new PricedProduct(RatesProducts.Of(line), RatesProducts.Version);
+            return provider.Products.Contains(product) ? null
+                : $"No pricing provider prices {product}; {provider.Name} prices {(provider.Products.Count == 0 ? "nothing" : string.Join(", ", provider.Products))}.";
+        }
+        var priced = lines.Where(l => l.Priceable && Unpriced(l) is null).ToList();
         return new LiveInput(state.Revision, RatesEditRules.ValuationDate(state),
-            [.. lines.Where(l => l.Priceable).Select(l => PricingLines.From(l, state.Revision))],
-            [.. lines.Where(l => !l.Priceable).Select(l => new NotPricedLine(l.Line, [.. l.Issues, .. l.Held]))]);
+            [.. priced.Select(l => PricingLines.From(l, state.Revision))],
+            [.. lines.Except(priced).Select(l => new NotPricedLine(l.Line, [.. l.Issues, .. l.Held, .. Unpriced(l) is { } reason ? [reason] : Array.Empty<string>()]))]);
     }
 
     public static (MarketUpdate Market, DateOnly ValuationDate, IReadOnlyList<PricingLine> Lines, IReadOnlyList<NotPricedLine> NotPriced) Read(JsonNode input) =>
