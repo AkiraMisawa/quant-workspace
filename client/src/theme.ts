@@ -2,6 +2,8 @@ import { createTheme, type MantineColorsTuple } from '@mantine/core';
 
 // Quant Workbench's own look: dense, dark-first, with a signal amber for focus and primary actions and
 // tabular figures everywhere numbers line up. Mantine supplies the components; this supplies the system.
+// docs/design-guidelines.md says how to use it, and ADR-0009 why: one Control Height (Mantine `xs`, 30px) for
+// every control in a toolbar, spacing on a 4px grid, the type ramp below, and colour only from the theme.
 
 const signal: MantineColorsTuple = [
   '#fff6e0', '#ffeccb', '#ffd79a', '#ffc164', '#ffae36', '#ffa218', '#ff9c03', '#e38800', '#ca7800', '#af6700',
@@ -21,6 +23,8 @@ export const theme = createTheme({
   fontSizes: { xs: '11px', sm: '12px', md: '13px', lg: '15px', xl: '18px' },
   spacing: { xs: '4px', sm: '8px', md: '12px', lg: '16px', xl: '24px' },
   headings: { fontWeight: '600' },
-  focusRing: 'always',
+  // The ring shows on :focus-visible: always for the keyboard, never as a leftover of a mouse click or a tap
+  // (ADR-0009). ExGrid draws its own Focus inside the grid.
+  focusRing: 'auto',
   cursorType: 'pointer',
 });

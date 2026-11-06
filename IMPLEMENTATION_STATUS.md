@@ -233,6 +233,29 @@ The provider and the market are simulated. Real holiday calendars, the confirmed
 - The agent cannot run workflows (Runs) or read data yet; it has the three Rates commands.
 - XVA registers no command, so the agent cannot act on an XVA workspace.
 
+## Design guidelines and the header (ADR-0009, proposed 2026-11-06)
+
+### What runs
+
+- `docs/design-guidelines.md`: Control Height, alignment, icons, the shell, colour, touch and keyboard, responsive layout, and how to check a UI change, each rule with its source.
+- The header is three zones of 30px controls: title and Commands; Region and As of with their labels beside them; AI and theme, with icons from `@tabler/icons-react` 3.50.0. It is one row of 44px from 992px and two rows of 82px below; it no longer covers the top of a panel on a phone.
+- An invalid context field is marked in the header and explained above the panels (`ContextIssues`).
+- The focus ring follows `:focus-visible`.
+
+### Verification performed
+
+| Suite | Result |
+|---|---|
+| `npm run typecheck`, `npm test` (Vitest) | passed, 42 tests |
+| `npx playwright test e2e/workbench.spec.ts --grep ADR-0009 --repeat-each=3` (Chromium, headless, Linux) | 12 passed (4 widths × 3) |
+| `npx playwright test` (Chromium, headless, Linux) | 17 passed |
+
+Screenshots were looked at by hand at 390, 768, 992, 1024 and 1440px in both themes, and with an invalid As of. Not checked on a real phone or tablet.
+
+### Known limits
+
+The guidelines' §12: truncated Rates column headers, the Rates toolbar's three rows on a phone, a context message that repeats its field's name, and touch sizes unchecked on an iPhone (UX02).
+
 ## Next
 
 1. The owner's review of ADR-0003 §7 (scopes, carry and conflict), then a synthetic source change that can produce a conflict, and the browser cases still open above (reload, failed case unavailable).

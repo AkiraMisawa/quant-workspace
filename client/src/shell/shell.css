@@ -1,0 +1,94 @@
+/* The shell's own layout classes, prefixed `qwb-` like the grid bridge in theme.css. */
+
+/* The header (docs/design-guidelines.md, "The shell"). Its height is HEADER_HEIGHT in AppHeader.tsx; the numbers
+   here are the rows that height is made of: 30px controls, centred, and 8px between the two rows below `md`. */
+.qwb-header {
+  height: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'brand context actions';
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 8px;
+  align-content: center;
+  padding: 0 var(--mantine-spacing-sm);
+}
+
+.qwb-header-brand {
+  grid-area: brand;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.qwb-header-title {
+  font-size: var(--mantine-font-size-sm);
+  line-height: 1;
+  letter-spacing: 0.08em;
+  color: var(--mantine-color-signal-filled);
+  white-space: nowrap;
+}
+
+.qwb-header-context {
+  grid-area: context;
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.qwb-header-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.qwb-header-divider {
+  align-self: center;
+  height: 20px;
+}
+
+/* The single row needs about 850px (brand, two context fields, actions), so it folds below `md` (62em), not `sm`:
+   at 768px the context would slide under the brand. */
+@media (max-width: 61.99em) {
+  .qwb-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'brand actions' 'context context';
+    column-gap: 8px;
+  }
+  .qwb-header-brand { gap: 8px; }
+  .qwb-header-context { justify-self: start; gap: 12px; }
+}
+
+@media (max-width: 47.99em) {
+  .qwb-header-context { justify-self: stretch; gap: 8px; }
+}
+
+/* Toolbar fields (docs/design-guidelines.md, "Forms and toolbars"): the label to the left of its input, both
+   centred on the row, every input one Control Height (Mantine `xs`, 30px) tall. A width says what the field holds;
+   below the `sm` breakpoint a toolbar field shares the row with its neighbours instead. */
+.qwb-toolbar-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.qwb-toolbar-label {
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.qwb-toolbar-input { flex: none; }
+.qwb-toolbar-input--choice { width: 8rem; }
+.qwb-toolbar-input--date { width: 9rem; }
+.qwb-toolbar-input--text { width: 10rem; }
+.qwb-toolbar-input--number { width: 7rem; }
+
+@media (max-width: 47.99em) {
+  .qwb-toolbar-field { flex: 1 1 0; }
+  .qwb-toolbar-input { flex: 1 1 auto; width: auto; min-width: 0; }
+}
