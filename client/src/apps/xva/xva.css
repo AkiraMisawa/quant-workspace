@@ -1,0 +1,30 @@
+/* The XVA workspace page (docs/design-guidelines.md). Geometry only; colour comes from the theme. */
+
+/* The trades grid takes the room the window has left below the page's controls, so that it is the grid that scrolls
+   and not the page (§9). The rows above it are a few lines whose height the page does not measure (P4 of ExGrid), so
+   the room is given as a share of the window, never less than a dozen rows. ExGrid fills it (`viewportHeight="stretch"`). */
+.qwb-xva-trades {
+  height: max(20rem, calc(100dvh - 20rem));
+}
+
+.qwb-xva-result-table {
+  max-width: 40rem;
+  overflow-x: auto;
+}
+
+.qwb-xva .qwb-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A value the user set: the same weight the grid's Cell State gives it, without a second line under the input. */
+.qwb-modified {
+  font-weight: 600;
+}
+
+/* Below `sm` a toolbar field is at least 14rem wide: a date or a recovery stays readable, two fields that would
+   squeeze each other take a row each, and Price still fits beside the field before it. */
+@media (max-width: 47.99em) {
+  .qwb-xva .qwb-toolbar-field { flex: 1 1 14rem; }
+}

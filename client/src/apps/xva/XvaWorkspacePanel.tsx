@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import './xva.css';
 import { Alert, Badge, Button, Group, Modal, Select, Stack, Table, Text, TextInput } from '@mantine/core';
 import { GridSource, type CellState, type GridColumn, type GridEditIntent } from '@ex-grid/core';
 import type { ExGridApi } from '@ex-grid/react';
@@ -11,6 +12,7 @@ import { registerGridFocus } from '../../shell/focus';
 import type { XvaApi } from './api';
 import type { EffectiveTrade, HeldEdit, Resolution, ScopeDrop, XvaWorkspaceView } from './contracts';
 import { registerPrice } from './commands';
+import { XvaResult } from './XvaResult';
 import { EditQueue, parseRecovery, tradeFields, type PendingEdit } from './editing';
 
 // The fixed XVA workspace (docs/03, ADR-0003): the server holds the trades and every rule; this page shows
@@ -28,20 +30,23 @@ const column = (name: keyof Row & string, header: string, type: GridColumn<Row>[
   name, header, type, width, value: (row) => row[name] ?? undefined, ...extra,
 });
 
-/** Made once: a new column is a new declaration, and every row paints again (ExGrid ADR-0003). */
+/**
+ * Made once: a new column is a new declaration, and every row paints again (ExGrid ADR-0003). Each width holds its
+ * header and its widest value: the largest synthetic notional, 10,000,000,000, must not fall to `####`.
+ */
 const columns: readonly GridColumn<Row>[] = [
-  column('tradeId', 'Trade', 'text', 150),
-  column('product', 'Product', 'text', 90),
-  column('currency', 'Ccy', 'text', 56),
-  column('notional', 'Notional', 'number', 140, { editable: true, format: (v) => amount.format(v as number) }),
-  column('maturity', 'Maturity', 'text', 100),
-  column('fixedRate', 'Fixed rate', 'number', 96, { editable: true, format: (v) => rate.format(v as number) }),
-  column('schedule', 'Schedule', 'text', 80, { editable: true }),
-  column('lastFixing', 'Last fixing', 'number', 96, { format: (v) => rate.format(v as number) }),
-  column('csa', 'CSA', 'text', 130, { editable: true }),
-  column('curve', 'Curve', 'text', 100, { editable: true }),
-  column('before', 'Before', 'boolean', 72, { editable: true }),
-  column('after', 'After', 'boolean', 72, { editable: true }),
+  column('tradeId', 'Trade', 'text', 168),
+  column('product', 'Product', 'text', 104),
+  column('currency', 'Ccy', 'text', 76),
+  column('notional', 'Notional', 'number', 168, { editable: true, format: (v) => amount.format(v as number) }),
+  column('maturity', 'Maturity', 'text', 112),
+  column('fixedRate', 'Fixed rate', 'number', 112, { editable: true, format: (v) => rate.format(v as number) }),
+  column('schedule', 'Schedule', 'text', 104, { editable: true }),
+  column('lastFixing', 'Last fixing', 'number', 116, { format: (v) => rate.format(v as number) }),
+  column('csa', 'CSA', 'text', 120, { editable: true }),
+  column('curve', 'Curve', 'text', 112, { editable: true }),
+  column('before', 'Before', 'boolean', 88, { editable: true }),
+  column('after', 'After', 'boolean', 80, { editable: true }),
   { name: 'issues', header: 'Issues', type: 'text', width: 260, value: (row) => (row.issues.length === 0 ? undefined : row.issues.join(' ')), format: text },
 ];
 
@@ -73,6 +78,7 @@ export function XvaWorkspacePanel({ panelId, workspaceId, api }: { readonly pane
   const [busy, setBusy] = useState<string | undefined>(undefined);
   const [confirm, setConfirm] = useState<{ readonly registration: string; readonly drop: ScopeDrop } | undefined>(undefined);
   const [failure, setFailure] = useState<string | undefined>(undefined);
+  const [issue, setIssue] = useState<string | undefined>(undefined);
 
   const source = useMemo(() => GridSource.fetch<Row>(async (query, signal) => {
     // Filtering is not offered by the server yet; a filter set anyway is refused, never ignored.
@@ -137,12 +143,13 @@ export function XvaWorkspacePanel({ panelId, workspaceId, api }: { readonly pane
     else setConfirm({ registration, drop });
   };
 
+  // The figures of the latest Price stay on the page (XvaResult); the Run itself opens in a panel only when asked.
+  const [priced, setPriced] = useState<string | undefined>(undefined);
   const price = async () => {
     setBusy('Pricing');
     try {
       const run = await api.price(workspaceId, queue.revision, crypto.randomUUID());
-      const resultView = workspace.catalog.views.find((v) => v.definitionId === XVA_RESULT_VIEW);
-      workspace.store.getState().openPanel({ kind: 'run', title: `CVA/FVA ${view.data?.registration.key ?? ''}`, runId: run.runId, viewKey: resultView === undefined ? undefined : keyOf(resultView) });
+      setPriced(run.runId);
       void queryClient.invalidateQueries({ queryKey: ['xva', workspaceId] });
       void queryClient.invalidateQueries({ queryKey: ['history'] });
     } catch (error) {
@@ -151,6 +158,11 @@ export function XvaWorkspacePanel({ panelId, workspaceId, api }: { readonly pane
     } finally {
       setBusy(undefined);
     }
+  };
+
+  const openRun = (runId: string) => {
+    const resultView = workspace.catalog.views.find((v) => v.definitionId === XVA_RESULT_VIEW);
+    workspace.store.getState().openPanel({ kind: 'run', title: `CVA/FVA ${view.data?.registration.key ?? ''}`, runId, viewKey: resultView === undefined ? undefined : keyOf(resultView) });
   };
 
   const priceRef = useRef(price);
@@ -165,40 +177,52 @@ export function XvaWorkspacePanel({ panelId, workspaceId, api }: { readonly pane
   const ws = view.data;
   const blocking = ws.conflicts.length + ws.lost.filter((l) => !l.acknowledged).length;
 
+  const pricedRun = priced ?? ws.runs[0]?.runId;
+  const pricedRevision = ws.runs.find((r) => r.runId === pricedRun)?.revision;
+  const notBusy = busy === undefined;
+
   return (
-    <Stack gap="sm">
-      <Group gap="sm" wrap="wrap" align="flex-end">
-        <Select label="Counterparty" size="xs" w={240} allowDeselect={false} value={ws.registration.key}
-          data={(registrations.data ?? [ws.registration]).map((r) => ({ value: r.key, label: `${r.key} · ${r.name}` }))}
-          onChange={(value) => void chooseCounterparty(value)} disabled={busy !== undefined} />
-        <ValueDate value={ws.context.valueDate} disabled={busy !== undefined}
+    <Stack gap="sm" className="qwb-xva">
+      {/* The toolbar (docs/design-guidelines.md §3, §4): one 30px Control Height, each label beside its input. */}
+      <div className="qwb-toolbar" role="toolbar" aria-label="Workspace">
+        <ToolbarField label="Counterparty" wide>
+          {(id) => (
+            <Select id={id} size="xs" className="qwb-toolbar-input qwb-toolbar-input--wide" allowDeselect={false} value={ws.registration.key}
+              data={(registrations.data ?? [ws.registration]).map((r) => ({ value: r.key, label: `${r.key} · ${r.name}` }))}
+              onChange={(value) => void chooseCounterparty(value)} disabled={!notBusy} comboboxProps={{ withinPortal: true }} />
+          )}
+        </ToolbarField>
+        <ValueDate value={ws.context.valueDate} disabled={!notBusy}
           onCommit={(date) => void reacquire('Value date moved', () => api.changeValueDate(workspaceId, queue.revision, date))} />
-        <CommitField label="CVA recovery" placeholder={`empty: CDS ${ws.credit.cdsRecovery}`} value={ws.credit.cvaRecovery === null ? '' : String(ws.credit.cvaRecovery)}
-          parse={parseRecovery} onCommit={(value) => void queue.push({ entity: `credit:${ws.registration.key}`, field: 'cvaRecovery', value })} />
-        <Button size="xs" onClick={() => void price()} loading={busy === 'Pricing'} disabled={busy !== undefined && busy !== 'Pricing'}
+        <CommitField label="CVA recovery" placeholder={`empty: CDS ${ws.credit.cdsRecovery}`}
+          value={ws.credit.cvaRecovery == null ? '' : String(ws.credit.cvaRecovery)} modified={ws.credit.cvaRecoveryOwner === 'user'}
+          parse={parseRecovery} onIssue={setIssue}
+          onCommit={(value) => void queue.push({ entity: `credit:${ws.registration.key}`, field: 'cvaRecovery', value })} />
+        <Button size="xs" onClick={() => void price()} loading={busy === 'Pricing'} disabled={!notBusy && busy !== 'Pricing'}
           {...(blocking > 0 ? { title: `${blocking} held edit(s) on priced trades must be resolved first.` } : {})}>Price</Button>
-      </Group>
-      <Group gap="xs" wrap="wrap">
-        <Badge variant="light">{ws.agreement.maId} · {ws.agreement.nettingSetId}</Badge>
-        <Badge variant="light" color={ws.agreement.collateralised ? 'blue' : 'gray'}>{ws.agreement.collateralised ? `main CSA ${ws.agreement.mainCsaId}` : ws.agreement.noCsa}</Badge>
-        <Text size="xs" c="dimmed" data-testid="workspace-summary">{ws.trades} trades · {ws.overrides} edit(s) · revision {ws.revision} · {ws.sourceVersion}</Text>
-      </Group>
+      </div>
       {ws.csas.length > 0 && (
-        <Group gap="sm" wrap="wrap">
+        <div className="qwb-toolbar" role="toolbar" aria-label="CSA curves">
           {ws.csas.map((c) => (
-            <CommitField key={c.csaId} label={`${c.csaId} curve`} value={c.curve} modified={c.curveOwner === 'user'}
-              parse={(t) => (t.trim() === '' ? { ok: false, message: 'Type a curve.' } : { ok: true, value: t.trim() })}
+            <CommitField key={c.csaId} label={`${c.csaId} curve`} value={c.curve} modified={c.curveOwner === 'user'} onIssue={setIssue}
+              parse={(t) => (t.trim() === '' ? { ok: false, message: `Type a curve for ${c.csaId}.` } : { ok: true, value: t.trim() })}
               onCommit={(value) => void queue.push({ entity: `csa:${c.csaId}`, field: 'curve', value })} />
           ))}
-        </Group>
+        </div>
       )}
+      <Group gap="xs" wrap="wrap">
+        <Badge variant="light" color="gray">{ws.agreement.maId} · {ws.agreement.nettingSetId}</Badge>
+        <Badge variant="light" color="gray">{ws.agreement.collateralised ? `main CSA ${ws.agreement.mainCsaId}` : ws.agreement.noCsa}</Badge>
+        <Text size="xs" c="dimmed" data-testid="workspace-summary">{ws.trades} trades · {ws.overrides} edit(s) · revision {ws.revision} · {ws.sourceVersion}</Text>
+      </Group>
+      {issue !== undefined && <Text size="xs" c="red" role="alert" data-testid="field-issue">{issue}</Text>}
+      {pricedRun !== undefined && <XvaResult runId={pricedRun} pricedRevision={pricedRevision} revision={ws.revision} onOpen={() => openRun(pricedRun)} />}
       <HeldEdits conflicts={ws.conflicts} lost={ws.lost} resolve={(edit, resolution) => void queue.push({ entity: edit.entity, field: edit.field, resolution })} />
       {failure !== undefined && <Alert color="red" variant="light" withCloseButton onClose={() => setFailure(undefined)} title="The trades could not be read">{failure}</Alert>}
-      <div aria-label="Trades">
+      <div className="qwb-xva-trades" aria-label="Trades">
         <WorkbenchGrid<Row> ref={grid} columns={columns} source={source} onEdit={onEdit} cellState={cellState} cellMessage={cellMessage}
-          density="compact" viewportWidth="stretch" viewportHeight={420} pinnedColumnCount={1} locale="en-US" />
+          density="compact" viewportWidth="stretch" viewportHeight="stretch" pinnedColumnCount={1} locale="en-US" />
       </div>
-      {ws.runs.length > 0 && <Text size="xs" c="dimmed">Priced: {ws.runs.map((r) => `${r.runId.slice(-8)} (r${r.revision})`).join(', ')}</Text>}
       <Modal opened={confirm !== undefined} onClose={() => setConfirm(undefined)} title="Change counterparty" trapFocus transitionProps={{ duration: 0 }}>
         {confirm !== undefined && (
           <Stack gap="sm">
@@ -221,31 +245,51 @@ export function XvaWorkspacePanel({ panelId, workspaceId, api }: { readonly pane
   );
 }
 
-/** A field that sends its value on Enter or when left, and only when it changed and reads correctly. */
-function CommitField({ label, value, placeholder, modified, parse, onCommit }: {
+/** A toolbar field: its label to the left of its input, both one Control Height (docs/design-guidelines.md §4). */
+function ToolbarField({ label, wide, children }: { readonly label: string; readonly wide?: boolean; readonly children: (id: string) => ReactNode }) {
+  const id = useId();
+  return (
+    <div className={wide === true ? 'qwb-toolbar-field qwb-toolbar-field--wide' : 'qwb-toolbar-field'}>
+      <Text component="label" htmlFor={id} size="xs" c="dimmed" className="qwb-toolbar-label">{label}</Text>
+      {children(id)}
+    </div>
+  );
+}
+
+/**
+ * A toolbar field that sends its value on Enter or when left, and only when it changed and reads correctly. A value
+ * it cannot read marks the input invalid and is said once below the toolbars, so the row keeps its height.
+ */
+function CommitField({ label, value, placeholder, modified, parse, onCommit, onIssue }: {
   readonly label: string;
   readonly value: string;
   readonly placeholder?: string;
   readonly modified?: boolean;
   readonly parse: (text: string) => { readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly message: string };
   readonly onCommit: (value: unknown) => void;
+  readonly onIssue: (message: string | undefined) => void;
 }) {
   const [draft, setDraft] = useState(value);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [invalid, setInvalid] = useState(false);
   useEffect(() => setDraft(value), [value]);
+  const settle = (message: string | undefined) => { setInvalid(message !== undefined); onIssue(message === undefined ? undefined : `${label}: ${message}`); };
   const commit = () => {
-    if (draft === value) { setError(undefined); return; }
+    if (draft === value) { if (invalid) settle(undefined); return; }
     const parsed = parse(draft);
-    if (!parsed.ok) { setError(parsed.message); return; }
-    setError(undefined);
+    if (!parsed.ok) { settle(parsed.message); return; }
+    settle(undefined);
     onCommit(parsed.value);
   };
   return (
-    <TextInput label={label} size="xs" w={150} value={draft} error={error}
-      {...(placeholder === undefined ? {} : { placeholder })}
-      {...(modified === true ? { styles: { input: { fontWeight: 600 } }, description: 'set by you' } : {})}
-      onChange={(e) => setDraft(e.currentTarget.value)} onBlur={commit}
-      onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setDraft(value); setError(undefined); } }} />
+    <ToolbarField label={label}>
+      {(id) => (
+        <TextInput id={id} size="xs" className="qwb-toolbar-input qwb-toolbar-input--text" value={draft} error={invalid}
+          {...(placeholder === undefined ? {} : { placeholder })}
+          {...(modified === true ? { 'data-modified': true, title: 'Set by you', classNames: { input: 'qwb-modified' } } : {})}
+          onChange={(e) => setDraft(e.currentTarget.value)} onBlur={commit}
+          onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setDraft(value); if (invalid) settle(undefined); } }} />
+      )}
+    </ToolbarField>
   );
 }
 
@@ -254,8 +298,12 @@ function ValueDate({ value, disabled, onCommit }: { readonly value: string; read
   useEffect(() => setDraft(value), [value]);
   const commit = () => { if (draft !== value && /^\d{4}-\d{2}-\d{2}$/.test(draft)) onCommit(draft); };
   return (
-    <TextInput label="Value date" type="date" size="xs" w={150} value={draft} disabled={disabled}
-      onChange={(e) => setDraft(e.currentTarget.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') commit(); }} />
+    <ToolbarField label="Value date">
+      {(id) => (
+        <TextInput id={id} type="date" size="xs" className="qwb-toolbar-input qwb-toolbar-input--date" value={draft} disabled={disabled}
+          onChange={(e) => setDraft(e.currentTarget.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') commit(); }} />
+      )}
+    </ToolbarField>
   );
 }
 

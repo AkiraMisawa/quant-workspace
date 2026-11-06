@@ -10,9 +10,10 @@ export interface EffectiveTrade {
   readonly currency: string;
   readonly notional: number;
   readonly maturity: string;
-  readonly fixedRate: number | null;
-  readonly schedule: string | null;
-  readonly lastFixing: number | null;
+  /** Absent where the product has none (an FX forward): the server leaves nulls out. */
+  readonly fixedRate?: number | null;
+  readonly schedule?: string | null;
+  readonly lastFixing?: number | null;
   readonly csa: string;
   readonly csaOwner: Ownership;
   readonly curve: string;
@@ -41,7 +42,8 @@ export interface Agreement {
 
 export interface EffectiveCsa { readonly csaId: string; readonly currency: string; readonly curve: string; readonly curveOwner: Ownership }
 
-export interface EffectiveCredit { readonly cvaRecovery: number | null; readonly cvaRecoveryOwner: Ownership; readonly cdsRecovery: number }
+/** `cvaRecovery` is absent when it is empty: the server leaves nulls out, and an empty one means the CDS recovery applies. */
+export interface EffectiveCredit { readonly cvaRecovery?: number | null; readonly cvaRecoveryOwner: Ownership; readonly cdsRecovery: number }
 
 export interface HeldEdit {
   readonly scope: string;

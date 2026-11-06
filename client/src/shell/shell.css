@@ -70,6 +70,13 @@
 /* Toolbar fields (docs/design-guidelines.md, "Forms and toolbars"): the label to the left of its input, both
    centred on the row, every input one Control Height (Mantine `xs`, 30px) tall. A width says what the field holds;
    below the `sm` breakpoint a toolbar field shares the row with its neighbours instead. */
+.qwb-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mantine-spacing-xs) var(--mantine-spacing-md);
+}
+
 .qwb-toolbar-field {
   display: flex;
   align-items: center;
@@ -87,8 +94,11 @@
 .qwb-toolbar-input--date { width: 9rem; }
 .qwb-toolbar-input--text { width: 10rem; }
 .qwb-toolbar-input--number { width: 7rem; }
+.qwb-toolbar-input--wide { width: 16rem; }
 
 @media (max-width: 47.99em) {
   .qwb-toolbar-field { flex: 1 1 0; }
+  /* A wide field (a counterparty) takes its own row on a phone rather than squeezing its neighbours. */
+  .qwb-toolbar-field--wide { flex-basis: 100%; }
   .qwb-toolbar-input { flex: 1 1 auto; width: auto; min-width: 0; }
 }
