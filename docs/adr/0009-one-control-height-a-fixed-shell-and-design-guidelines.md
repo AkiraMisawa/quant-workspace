@@ -38,7 +38,13 @@ None of these shows in a unit test, and each looked acceptable in the component 
 5. **Icons come from `@tabler/icons-react`** (3.50.0, exact), at 16px in a 30px control. No text glyph is an icon.
 6. **The focus ring follows `:focus-visible`** (`focusRing: 'auto'`): always for the keyboard, never as the
    remainder of a click or tap.
-7. **Geometry that only a browser shows is tested in one.** A layer-3 test reads the header's controls at 1440, 992,
+7. **Grids are drawn by `@ex-grid/mantine`, and the workbench takes the grid's font.** Asked by the owner on
+   2026-11-06 ("switch to @ex-grid/mantine"). `WorkbenchGrid` wraps `MantineExGrid` with the paper decided once
+   (bordered, square), and the hand-written `--ex-` bridge in `theme.css` is removed (ADR-0001's DEFAULT, rewritten).
+   The theme's `fontFamily` is `mantineDefaultFont.family`, Mantine's default system stack, the face whose widths
+   ExGrid judges `####` by: a figure reads in one face in a grid and beside it, and no web font is loaded. Inter was
+   named before and never loaded, so each platform drew a different fallback.
+8. **Geometry that only a browser shows is tested in one.** A layer-3 test reads the header's controls at 1440, 992,
    768 and 390px and holds one Control Height, shared rows, nothing past the right edge, and a main area that starts
    below the header.
 
@@ -51,6 +57,9 @@ toward 44px, decided on the iPhone journey (UX02) on a real device.
   divider. Below `md` the context takes a second row; below `sm` its two fields share that row's width.
 - The AI toggle shows its open state with the `light` variant and `aria-pressed`, instead of a filled amber button
   with a focus ring.
-- A new dependency, `@tabler/icons-react`, pinned exactly like the rest of `client/package.json`.
+- New dependencies, `@tabler/icons-react` and `@ex-grid/mantine`, pinned exactly like the rest of
+  `client/package.json`; `@ex-grid/mantine` moves with the ExGrid family's version.
+- The grids' headers are the body's colour at weight 600, Mantine's Table look, instead of the grey band the
+  hand-written bridge drew; their menus and filter panel are Mantine's buttons, selects and radios.
 - The guidelines list what was seen and left (§12): truncated Rates column headers, the Rates toolbar's three rows on
   a phone, a context message that repeats its field's name, touch sizes unchecked on an iPhone.

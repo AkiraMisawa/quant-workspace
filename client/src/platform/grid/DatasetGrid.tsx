@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { actionColumn, type GridActionEvent, type GridColumn } from '@ex-grid/core';
-import { ExGrid, type ExGridApi } from '@ex-grid/react';
+import type { ExGridApi } from '@ex-grid/react';
+import { WorkbenchGrid } from './WorkbenchGrid';
 import type { Dataset, ViewAction, ViewColumn } from '../contracts';
 
 // The adapter between a declarative grid component and ExGrid (ADR-0003 §3). ExGrid draws, scrolls,
@@ -58,8 +59,8 @@ export function DatasetGrid({ dataset, columns, actions, onAction, registerFocus
   const height = Math.min(36 + dataset.rows.length * 28, 480);
 
   return (
-    <div className="qwb-grid" aria-label={label} data-rows={dataset.rows.length}>
-      <ExGrid<Row>
+    <div aria-label={label} data-rows={dataset.rows.length}>
+      <WorkbenchGrid<Row>
         ref={grid}
         columns={gridColumns}
         rows={dataset.rows}

@@ -4,6 +4,7 @@ import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@mantine/core/styles.css';
 import '@ex-grid/core/styles.css';
+import '@ex-grid/mantine/styles.css';
 import './theme.css';
 import './shell/shell.css';
 import { App } from './App';

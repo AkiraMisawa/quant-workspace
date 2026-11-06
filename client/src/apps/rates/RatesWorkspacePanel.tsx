@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Badge, Button, Group, Stack, Table, Text, TextInput } from '@mantine/core';
 import { GridSource, type GridActionEvent, type GridColumn, type GridEditIntent } from '@ex-grid/core';
-import { ExGrid, type ExGridApi } from '@ex-grid/react';
+import type { ExGridApi } from '@ex-grid/react';
+import { WorkbenchGrid } from '../../platform/grid/WorkbenchGrid';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '../../platform/api';
 import { EditQueue } from '../../platform/workspace/editQueue';
@@ -259,8 +260,8 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
         <Text size="xs" c="dimmed" data-testid="workspace-summary">{ws.lines.length} line(s) · revision {ws.revision}</Text>
       </Group>
       <HeldEdits conflicts={ws.conflicts} lost={ws.lost} resolve={(held, resolution) => void queue.push({ kind: 'resolve', held, resolution })} />
-      <div className="qwb-grid" aria-label="Lines">
-        <ExGrid<LineRow> ref={grid} columns={layout.columns} headerGroups={layout.groups} source={source} onEdit={onEdit} onAction={onAction}
+      <div aria-label="Lines">
+        <WorkbenchGrid<LineRow> ref={grid} columns={layout.columns} headerGroups={layout.groups} source={source} onEdit={onEdit} onAction={onAction}
           cellState={lineCellState} cellMessage={lineCellMessage} density="compact" viewportWidth="stretch" viewportHeight={height}
           pinnedColumnCount={PINNED_COLUMNS} locale="en-US" />
       </div>
@@ -317,8 +318,8 @@ function Cashflows({ workspaceId, line, revision, api, edit, onClose }: {
       {flows.data !== undefined && flows.data.periods.length === 0 && (
         <Text size="xs" c="dimmed">This line generates no schedule until its terms resolve; see its issues.</Text>
       )}
-      <div className="qwb-grid" aria-label={`Cashflows of ${line}`}>
-        <ExGrid<PeriodView> columns={periodColumns} source={source} onEdit={onEdit} cellState={periodCellState} cellMessage={cellMessage}
+      <div aria-label={`Cashflows of ${line}`}>
+        <WorkbenchGrid<PeriodView> columns={periodColumns} source={source} onEdit={onEdit} cellState={periodCellState} cellMessage={cellMessage}
           density="compact" viewportWidth="stretch" viewportHeight={Math.min(64 + (flows.data?.periods.length ?? 3) * 28, 320)} locale="en-US" />
       </div>
       {flows.data !== undefined && flows.data.exchanges.length > 0 && <Exchanges flows={flows.data} />}

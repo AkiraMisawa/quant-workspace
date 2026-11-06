@@ -53,7 +53,7 @@ Every provider is simulated. All data is synthetic and labelled as such on scree
 
 ### ExGrid
 
-- `@ex-grid/core`, `@ex-grid/data` and `@ex-grid/react` `0.2.0-beta.3` from npm (since 2026-11-04; before that, tarballs packed from ex-grid commit `3bf523d` in `vendor/ex-grid/`), through `@ex-grid/react`. The stylesheet is `@ex-grid/core/styles.css`.
+- `@ex-grid/core`, `@ex-grid/data`, `@ex-grid/react` and `@ex-grid/mantine` `0.2.0-beta.3` from npm (since 2026-11-04; before that, tarballs packed from ex-grid commit `3bf523d` in `vendor/ex-grid/`). Since 2026-11-06 (ADR-0009) every grid is `WorkbenchGrid`, ExGrid drawn by its Mantine Wrapper; the stylesheets are `@ex-grid/core/styles.css` and `@ex-grid/mantine/styles.css`.
 - A key sent to a newly drawn grid before it carries its Settled Mark is lost, by ExGrid's own contract. Browser tests wait for the mark, as ex-grid's own tests do.
 - ExGrid's TypeScript core has no touch support yet.
 
@@ -241,6 +241,7 @@ The provider and the market are simulated. Real holiday calendars, the confirmed
 - The header is three zones of 30px controls: title and Commands; Region and As of with their labels beside them; AI and theme, with icons from `@tabler/icons-react` 3.50.0. It is one row of 44px from 992px and two rows of 82px below; it no longer covers the top of a panel on a phone.
 - An invalid context field is marked in the header and explained above the panels (`ContextIssues`).
 - The focus ring follows `:focus-visible`.
+- Every grid is drawn by `@ex-grid/mantine` (`WorkbenchGrid`): the theme's colours in both schemes, Mantine's menus and filter panel, and the cells in the face ExGrid has widths for. The workbench takes the same face (Mantine's default system stack); the hand-written `--ex-` bridge is gone.
 
 ### Verification performed
 
@@ -248,9 +249,9 @@ The provider and the market are simulated. Real holiday calendars, the confirmed
 |---|---|
 | `npm run typecheck`, `npm test` (Vitest) | passed, 42 tests |
 | `npx playwright test e2e/workbench.spec.ts --grep ADR-0009 --repeat-each=3` (Chromium, headless, Linux) | 12 passed (4 widths × 3) |
-| `npx playwright test` (Chromium, headless, Linux) | 17 passed |
+| `npx playwright test` (Chromium, headless, Linux), after the switch to `@ex-grid/mantine` | 17 passed |
 
-Screenshots were looked at by hand at 390, 768, 992, 1024 and 1440px in both themes, and with an invalid As of. Not checked on a real phone or tablet.
+Screenshots were looked at by hand at 390, 768, 992, 1024 and 1440px in both themes, and with an invalid As of; the XVA grid and its column menu in both themes after the switch. Not checked on a real phone or tablet.
 
 ### Known limits
 

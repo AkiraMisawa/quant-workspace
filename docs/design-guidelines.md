@@ -67,8 +67,11 @@ Four principles follow, and every rule below is one of them made concrete.
 - **Inside content** (a resolution line under a grid, a card in the AI pane): `compact-xs` buttons (22px) are allowed
   where no input shares the row and the button sits in running text. They still meet the target size rule of §8 by
   their spacing.
-- **Grids:** ExGrid with `density="compact"`. A row's height is ExGrid's, set through its parameters, never in CSS
-  (ex-grid ADR-0013/0016): a CSS row height breaks its virtualisation arithmetic and selection overlay.
+- **Grids:** every grid is `WorkbenchGrid` (`client/src/platform/grid/WorkbenchGrid.tsx`), which is ExGrid drawn by
+  its Mantine Wrapper `@ex-grid/mantine`, with `density="compact"`. **MUST NOT** render `ExGrid` from `@ex-grid/react`
+  directly: it would miss the theme's colours and Mantine's menus. A row's height is ExGrid's, set through its
+  parameters, never in CSS (ex-grid ADR-0013/0016): a CSS row height breaks its virtualisation arithmetic and
+  selection overlay. The Wrapper sizes the grid's own Mantine controls from the density (`xs` for compact).
 
 Why 30px: it is the smallest Mantine input height, it holds 12–13px text with room for a focus ring, it is the
 size Carbon gives its "small" field for constrained space and long forms ([Carbon](#references)), and it already meets
@@ -91,7 +94,7 @@ WCAG's minimum target size (§8). Smaller controls would save little: the grids,
   context from the shell switches). Controls of one scope are 8px apart (`gap="xs"`/`"sm"`); groups 12px or more.
   Proximity is the cheapest grouping there is ([Strom, design density](#references)).
 - **Numbers.** Quantities are right-aligned, in tabular lining figures (`font-variant-numeric: tabular-nums`, set on
-  every grid by the bridge in `client/src/theme.css`), so that digits of the same place line up. A column header takes
+  every grid by ExGrid's own stylesheet), so that digits of the same place line up. A column header takes
   its column's alignment. Identifiers that happen to be digits (a Run ID, a trade number) are not quantities and are
   left-aligned ([Spectrum](#references)).
 - **Content in a row is vertically centred**, text and controls alike ([Spectrum](#references)).
@@ -128,8 +131,10 @@ The shell is the header, the panels under their tabs, and the AI pane (ADR-0007 
 ## 7. Colour and themes
 
 - **Both themes are acceptance requirements** (UX03). Dark is the default. Every change is looked at in both.
-- **MUST** take colour from the theme and Mantine's variables. CSS that differs by theme uses `light-dark()`, as the
-  ExGrid bridge in `client/src/theme.css` does. ExGrid's colours come only from that bridge's `--ex-` tokens.
+- **MUST** take colour from the theme and Mantine's variables. CSS that differs by theme uses `light-dark()` or
+  Mantine's scheme attribute. ExGrid's colours come only from `@ex-grid/mantine/styles.css`, which maps its `--ex-`
+  tokens onto Mantine's variables; this repository sets no `--ex-` token (ex-grid ADR-0030 limits what a Consumer
+  may set, and the font is metrics-bearing: see §10).
 - **Meaning of colour** — one meaning each, everywhere:
 
   | Colour | Means | Examples |
@@ -192,6 +197,13 @@ Mantine's breakpoints, beside the window classes Android and Material use for th
 
 ## 10. Type and words
 
+- **One face**: Mantine's default system stack (`-apple-system`, `BlinkMacSystemFont`, `Segoe UI`, `Roboto`, …),
+  taken from `mantineDefaultFont.family` in `theme.ts`. It is the face ExGrid has measured widths for, so the grid
+  judges a figure that does not fit (`####`) by the face it is drawn in, and the cells and the text beside them
+  match. **MUST NOT** set a grid's font in CSS or load a web font for the UI without handing the grid that font's
+  measured widths (`MantineExGrid`'s `font`, ex-grid ADR-0027/0390 §9): a grid judging widths for one face while
+  drawing another cuts or overflows figures, quietly.
+
 - Sentence case for labels, buttons, titles and messages (`Leg 1 details`, `Using the previous context until this one
   is valid.`). Upper case only for the product's name and a Badge.
 - A button says what it does as a verb (`Price`, `Start live`, `Add IRS`); a toggle says what it shows and reports
@@ -221,6 +233,8 @@ Seen while writing this, and not fixed by ADR-0009's change:
 - A required context field's message repeats its name (`As of: asOf is required.`), because `validate` names the
   field and the message is shown without its label.
 - Touch sizes have not been checked on an iPhone (UX02).
+- In a grid's column menu, `@ex-grid/mantine` 0.2.0-beta.3 draws a disabled item as a filled grey block, where
+  Mantine's own Menu only dims the text. That is the Wrapper's, to be reported to ex-grid, not patched here.
 
 ## References
 

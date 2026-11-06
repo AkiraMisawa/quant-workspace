@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Badge, Button, Group, Modal, Select, Stack, Table, Text, TextInput } from '@mantine/core';
 import { GridSource, type CellState, type GridColumn, type GridEditIntent } from '@ex-grid/core';
-import { ExGrid, type ExGridApi } from '@ex-grid/react';
+import type { ExGridApi } from '@ex-grid/react';
+import { WorkbenchGrid } from '../../platform/grid/WorkbenchGrid';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '../../platform/api';
 import { useWorkspaceContext } from '../../platform/workspace/WorkspaceProvider';
@@ -193,8 +194,8 @@ export function XvaWorkspacePanel({ panelId, workspaceId, api }: { readonly pane
       )}
       <HeldEdits conflicts={ws.conflicts} lost={ws.lost} resolve={(edit, resolution) => void queue.push({ entity: edit.entity, field: edit.field, resolution })} />
       {failure !== undefined && <Alert color="red" variant="light" withCloseButton onClose={() => setFailure(undefined)} title="The trades could not be read">{failure}</Alert>}
-      <div className="qwb-grid" aria-label="Trades">
-        <ExGrid<Row> ref={grid} columns={columns} source={source} onEdit={onEdit} cellState={cellState} cellMessage={cellMessage}
+      <div aria-label="Trades">
+        <WorkbenchGrid<Row> ref={grid} columns={columns} source={source} onEdit={onEdit} cellState={cellState} cellMessage={cellMessage}
           density="compact" viewportWidth="stretch" viewportHeight={420} pinnedColumnCount={1} locale="en-US" />
       </div>
       {ws.runs.length > 0 && <Text size="xs" c="dimmed">Priced: {ws.runs.map((r) => `${r.runId.slice(-8)} (r${r.revision})`).join(', ')}</Text>}

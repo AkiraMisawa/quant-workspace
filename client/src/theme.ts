@@ -1,4 +1,5 @@
 import { createTheme, type MantineColorsTuple } from '@mantine/core';
+import { mantineDefaultFont } from '@ex-grid/mantine';
 
 // Quant Workbench's own look: dense, dark-first, with a signal amber for focus and primary actions and
 // tabular figures everywhere numbers line up. Mantine supplies the components; this supplies the system.
@@ -17,7 +18,10 @@ export const theme = createTheme({
   primaryColor: 'signal',
   primaryShade: { light: 7, dark: 5 },
   colors: { signal, dark: ['#c9d1e0', '#a6b0c3', '#7d889e', '#5a6478', '#3a4256', '#2a3142', '#1d2331', '#151a25', '#10141d', '#0b0e15'], ink },
-  fontFamily: 'Inter, "Segoe UI", system-ui, -apple-system, sans-serif',
+  // The grid's cells are drawn in Mantine's default stack, the face ExGrid has widths for (ex-grid ADR-0390 §9). The
+  // rest of the workbench takes the same stack, so a figure reads in one face in a grid and beside it. Inter was named
+  // here before ADR-0009 and never loaded, so each platform drew its own fallback.
+  fontFamily: mantineDefaultFont.family,
   fontFamilyMonospace: '"JetBrains Mono", "SFMono-Regular", Consolas, monospace',
   defaultRadius: 'xs',
   fontSizes: { xs: '11px', sm: '12px', md: '13px', lg: '15px', xl: '18px' },
