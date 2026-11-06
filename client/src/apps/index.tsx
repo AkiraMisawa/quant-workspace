@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from 'react';
 import { Button, Group, Modal, NumberInput, Select, Stack, TextInput } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
-import type { Command, CommandArgument } from '../platform/commands/commands';
+import type { Command } from '../platform/commands/commands';
+import { termCompletions, termParts, type ProductDescriptor } from '../platform/products';
 import { parserOf } from './rates/lines';
-import { parseNumber } from './xva/editing';
 import { useWorkspace, useWorkspaceContext } from '../platform/workspace/WorkspaceProvider';
 import type { Panel, WorkspaceState } from '../platform/workspace/workspaceStore';
 import { PricingDbPanel } from './history/PricingDbPanel';
@@ -114,14 +114,23 @@ export function appCommands(state: Pick<WorkspaceState, 'showApp' | 'openAppDial
       group: 'Rates',
       run: () => state.openAppDialog(NEW_RATES),
     },
+    ...productCommands(rates === undefined ? [] : ratesCommandsOf(rates)?.products() ?? [], onRates, (product, terms) => page().newLine(product, terms)),
     {
-      id: 'rates.line.irs',
-      words: 'new irs',
-      title: 'Add an interest rate swap from its terms',
+      id: 'rates.defaults',
+      words: 'set defaults',
+      title: 'Set the workspace defaults for new lines (currency, notional, direction)',
       group: 'Rates',
       ...onRates,
-      args: irsArguments(() => ratesCommandsOf(rates)?.conventions() ?? []),
-      run: (a) => page().createLine(irsTerms(a)),
+      args: [
+        { name: 'currency', required: false, hint: 'a currency such as JPY; none clears it' },
+        { name: 'notional', required: false, hint: 'in millions (1000 is a billion), or 3bn, 500mm; none clears it', check: (v) => (v === 'none' ? undefined : parsed('leg1.notional')(v)) },
+        { name: 'direction', required: false, complete: () => [{ value: 'pay' }, { value: 'receive' }, { value: 'none' }], check: (v) => (v === 'none' ? undefined : parsed('direction')(v)) },
+      ],
+      run: (a) => page().setDefaults({
+        ...(a.currency === undefined ? {} : { currency: a.currency === 'none' ? null : a.currency.toUpperCase() }),
+        ...(a.notional === undefined ? {} : { notional: a.notional === 'none' ? null : parsedValue('leg1.notional', a.notional) as number }),
+        ...(a.direction === undefined ? {} : { direction: a.direction === 'none' ? null : parsedValue('direction', a.direction) as string }),
+      }),
     },
     {
       id: 'rates.line.add',
@@ -146,62 +155,41 @@ export function appCommands(state: Pick<WorkspaceState, 'showApp' | 'openAppDial
   ];
 }
 
-const TENORS = ['1y', '2y', '3y', '5y', '7y', '10y', '15y', '20y', '30y'];
-const FREQUENCIES = [{ value: '1m' }, { value: '3m' }, { value: '6m' }, { value: '12m' }];
-
-/** A notional as typed on the line: a number, or one with k, m or bn after it (`3bn`, `500m`). */
-export function parseNotional(text: string): number | undefined {
-  const m = /^(.+?)(k|m|bn)?$/i.exec(text.trim());
-  if (m === null) return undefined;
-  const n = parseNumber(m[1]!);
-  if (n === undefined || n <= 0) return undefined;
-  const scale = { k: 1e3, m: 1e6, bn: 1e9 }[(m[2] ?? '').toLowerCase() as 'k' | 'm' | 'bn'] ?? 1;
-  return n * scale;
-}
-
 const parsed = (field: string) => (value: string): string | undefined => {
   const result = parserOf(field)!(value);
   return result.ok ? undefined : result.message;
 };
 
-/**
- * `new irs`: the basic terms of an IRS (C40), one leg fixed and one floating on the same currency, index and
- * notional. A quote left out is the leg solved at par; one of rate= or spread= is needed (a line with both legs at
- * par is refused, by the server, with its reason).
- */
-function irsArguments(conventions: () => readonly { readonly currency: string; readonly index: string }[]): CommandArgument[] {
-  return [
-    { name: 'currency', required: true, complete: () => [...new Set(conventions().map((c) => c.currency))].map((value) => ({ value })) },
-    { name: 'index', required: true, complete: (g) => conventions().filter((c) => g.currency === undefined || c.currency === g.currency.toUpperCase()).map((c) => ({ value: c.index, detail: c.currency })) },
-    { name: 'end', required: true, hint: 'a tenor such as 10y, or a date', complete: () => TENORS.map((value) => ({ value })), check: parsed('end') },
-    { name: 'notional', required: true, hint: 'such as 1000000000, 3bn or 500m', check: (v) => (parseNotional(v) === undefined ? 'a positive number, with k, m or bn if you like' : undefined) },
-    { name: 'direction', required: true, complete: () => [{ value: 'pay', detail: 'pay fixed' }, { value: 'receive', detail: 'receive fixed' }], check: parsed('direction') },
-    { name: 'fixed-frequency', required: true, complete: () => FREQUENCIES, check: parsed('leg1.paymentFrequency') },
-    { name: 'float-frequency', required: true, complete: () => FREQUENCIES, check: parsed('leg2.paymentFrequency') },
-    { name: 'rate', required: false, hint: 'the fixed rate in %; left out, it is solved at par', check: parsed('leg1.quote') },
-    { name: 'spread', required: false, hint: 'the floating spread in %; left out, it is solved at par', check: parsed('leg2.quote') },
-  ];
+function parsedValue(field: string, text: string): unknown {
+  const result = parserOf(field)!(text);
+  if (!result.ok) throw new Error(`${field} was checked on the line and is refused now: ${result.message}`);
+  return result.value;
 }
 
-function irsTerms(a: Readonly<Record<string, string>>): Record<string, unknown> {
-  const value = (field: string, text: string) => {
-    const result = parserOf(field)!(text);
-    if (!result.ok) throw new Error(`${field} was checked on the line and is refused now: ${result.message}`);
-    return result.value;
-  };
-  const notional = parseNotional(a.notional!);
-  if (notional === undefined) throw new Error('The notional was checked on the line and is refused now.');
-  const terms: Record<string, unknown> = { product: 'irs', end: value('end', a.end!), direction: value('direction', a.direction!) };
-  for (const [leg, frequency] of [[1, a['fixed-frequency']!], [2, a['float-frequency']!]] as const) {
-    terms[`leg${leg}.currency`] = a.currency!.toUpperCase();
-    terms[`leg${leg}.index`] = a.index!.toUpperCase();
-    terms[`leg${leg}.notional`] = notional;
-    terms[`leg${leg}.paymentFrequency`] = value(`leg${leg}.paymentFrequency`, frequency);
-  }
-  if (a.rate !== undefined) { terms['leg1.quoteKind'] = 'FixedRatePercent'; terms['leg1.quote'] = value('leg1.quote', a.rate); }
-  if (a.spread !== undefined) { terms['leg2.quoteKind'] = 'FloatSpreadPercent'; terms['leg2.quote'] = value('leg2.quote', a.spread); }
-  return terms;
+/**
+ * `new <product> <terms…>` for each product the server describes (ADR-0008 §1, §5): one generic command with its
+ * product named. The words are read in any order; the line completes and shows them from the description, and the
+ * server reads them again, fills what its defaults supply and refuses what is missing by name.
+ */
+function productCommands(products: readonly ProductDescriptor[], on: Partial<Pick<Command, 'unavailable' | 'target'>>, create: (product: string, terms: string) => void): Command[] {
+  return products.map((product) => ({
+    id: `entity.create/${product.id}`,
+    words: `new ${product.words}`,
+    title: `Add ${article(product.title)} from short terms, in any order`,
+    group: 'Rates',
+    ...on,
+    args: [{
+      name: 'terms', required: true, rest: true, words: true,
+      hint: `${product.fields.filter((f) => f.required).map((f) => f.name).join(', ')}; any order, name=value for the rest`,
+      complete: (given) => termCompletions(product, wordsOf(given.terms)),
+      parts: (text) => termParts(product, wordsOf(text)),
+    }],
+    run: (a) => create(product.id, a.terms ?? ''),
+  }));
 }
+
+const wordsOf = (text: string | undefined) => (text ?? '').split(/\s+/).filter((w) => w !== '');
+const article = (title: string) => `${/^[aeiou]/i.test(title) ? 'an' : 'a'} ${title.toLowerCase()}`;
 
 /** The dialogs apps open. Enter submits; Escape closes. */
 export function AppDialogs() {

@@ -1,3 +1,4 @@
+using Workbench.Composition.Application.Products;
 using System.Text.Json.Nodes;
 using Workbench.Agent;
 using Workbench.Composition.Application;
@@ -37,6 +38,12 @@ builder.Services.AddSingleton<IWorkbenchModule>(sp => new RatesModule(sp.GetRequ
 builder.Services.AddSingleton<RatesWorkspaces>();
 // The commands reach the workspace service only when invoked: it is built from the registry they are part of.
 builder.Services.AddSingleton<IWorkbenchModule>(sp => new RatesCommandsModule(sp.GetRequiredService<RatesWorkspaces>));
+// Products are descriptions from catalogs (ADR-0008 §7); the kernel's entity.create reads them. Rates describes its IRS and CCS.
+builder.Services.AddSingleton<IProductCatalog>(new RatesProductCatalog(conventions));
+builder.Services.AddSingleton<IProductRules>(sp => new IrsRules(conventions, sp.GetRequiredService<RatesWorkspaces>));
+builder.Services.AddSingleton<IProductRules>(sp => new CcsRules(conventions, sp.GetRequiredService<RatesWorkspaces>));
+builder.Services.AddSingleton<ProductService>();
+builder.Services.AddSingleton<IWorkbenchModule>(sp => new ProductsModule(sp.GetRequiredService<ProductService>));
 builder.Services.AddSingleton(sp => new CommandService(sp.GetRequiredService<CompositionRegistry>(), sp.GetRequiredService<IDataStore>()));
 if (rates.Ticker)
     builder.Services.AddHostedService(sp => new MarketTicker(sp.GetRequiredService<MarketFeed>(), rates.SyntheticMarket.Config().Step, sp.GetRequiredService<ILogger<MarketTicker>>()));
@@ -91,6 +98,7 @@ app.Services.GetRequiredService<CompositionRegistry>();
 app.MapWorkbenchApi();
 app.MapXvaApi();
 app.MapRatesApi();
+app.MapProductsApi();
 app.MapAgentApi();
 app.UseDefaultFiles();
 app.UseStaticFiles();

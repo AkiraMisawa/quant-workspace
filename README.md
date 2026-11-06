@@ -32,6 +32,10 @@ nix develop -c bash -c 'cd client && npm run build'
 # kept in server/src/Workbench.Web/App_Data/workbench.db unless Workbench__Database names another file.
 nix develop -c dotnet run --project server/src/Workbench.Web --urls http://localhost:5080
 
+# Development, both at once: the host on :5080 and Vite on http://localhost:5173 (open this one; it reloads on
+# save and forwards /api to the host). Ctrl-C stops both. --port moves the host.
+tools/dev.sh
+
 # Development: Vite on http://localhost:5173, forwarding /api to the host above
 nix develop -c bash -c 'cd client && npm run dev'
 

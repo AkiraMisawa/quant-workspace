@@ -200,17 +200,20 @@ public sealed class WorkspaceService(IReadOnlyDictionary<string, IEditRules> rul
     /// values. The module names the entity; one that exists already is refused.
     /// </summary>
     public WorkspaceState Create(string workspaceId, long expectedRevision, string user, string scope, string entity, JsonObject fields,
-        RunOrigin? origin = null) =>
+        RunOrigin? origin = null, IReadOnlyDictionary<string, string>? sources = null) =>
         Apply(workspaceId, expectedRevision, state =>
         {
             if (state.Created.ContainsKey(entity))
                 throw new WorkspaceRefused("EntityExists", $"{entity} exists already.");
             var seq = state.Revision + 1;
             var target = new EditTarget(scope, entity, "*");
+            var given = sources is { Count: > 0 } ? sources.ToDictionary() : null;
+            // The log says which fields were not typed and where they came from, as the entity does (ADR-0008 §4).
+            var note = given is null ? null : "defaults: " + string.Join(", ", given.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => $"{p.Key} from {p.Value}"));
             return state with
             {
-                Created = state.Created.Add(entity, new CreatedEntity(scope, entity, (JsonObject)fields.DeepClone(), seq)),
-                Log = state.Log.Add(Entry(state, seq, user, EditKind.Create, target, fields, origin: origin)),
+                Created = state.Created.Add(entity, new CreatedEntity(scope, entity, (JsonObject)fields.DeepClone(), seq, given)),
+                Log = state.Log.Add(Entry(state, seq, user, EditKind.Create, target, fields, note, origin)),
             };
         });
 

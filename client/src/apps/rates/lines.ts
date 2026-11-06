@@ -1,5 +1,5 @@
 import type { CellState, GridColumn, GridHeaderGroup } from '@ex-grid/core';
-import { actionColumn } from '@ex-grid/core';
+import { actionColumn, gridHeaderRequiredPx } from '@ex-grid/core';
 import { parseBoolean, parseNumber, type Parsed } from '../xva/editing';
 import type { LineView, LiveFrame, PeriodView } from './contracts';
 
@@ -58,6 +58,33 @@ function number(text: string): Parsed {
   return n === undefined ? fail('Type a number, such as 1,000,000 or 0.25, or leave it empty.') : { ok: true, value: n };
 }
 
+/** A notional is shown and typed in millions (owner, 2026-11-04); the server keeps it in units of its currency. */
+export const MILLION = 1e6;
+
+/**
+ * Reads a notional as typed: a bare number is millions (`1000` is a billion), and `k`, `m` or `bn` after it says its
+ * own scale (`3bn`, `500mm`). A bare number of a million or more would be a trillion or more: almost surely a full
+ * amount typed out of habit, so it is refused rather than taken as millions (spine 1).
+ */
+export function parseNotional(text: string): number | undefined | 'fullAmount' {
+  // `mm`, never `m`: `m` is months wherever words are read by form (ADR-0008 §2), so it is never millions here either.
+  const m = /^(.+?)\s*(k|mm|bn)?$/i.exec(text.trim());
+  if (m === null) return undefined;
+  const n = parseNumber(m[1]!);
+  if (n === undefined || n <= 0) return undefined;
+  if (m[2] === undefined) return n >= MILLION ? 'fullAmount' : n * MILLION;
+  return n * { k: 1e3, mm: 1e6, bn: 1e9 }[m[2].toLowerCase() as 'k' | 'mm' | 'bn'];
+}
+
+const NOTIONAL_HELP = 'Type the notional in millions (1000 is a billion), or with its scale: 3bn, 500mm.';
+
+function notional(text: string): Parsed {
+  if (empty(text)) return { ok: true, value: null };
+  const n = parseNotional(text);
+  if (n === 'fullAmount') return fail(`That reads as ${millions.format(Number(text.replaceAll(',', '')))} million. ${NOTIONAL_HELP}`);
+  return n === undefined ? fail(NOTIONAL_HELP) : { ok: true, value: n };
+}
+
 function whole(text: string): Parsed {
   if (empty(text)) return { ok: true, value: null };
   const n = parseNumber(text);
@@ -105,7 +132,7 @@ export const legDetail = ['dayCount', 'adjustment', 'dailyAverage', 'observation
 const legParsers: Readonly<Record<string, (text: string) => Parsed>> = {
   currency: code('a currency'),
   index: code('an index'),
-  notional: number,
+  notional,
   quoteKind: choice(quoteKinds, 'Type fixed, spread, strike, fxpts or atm, or leave it empty for par.'),
   quote: number,
   paymentFrequency: frequency(false),
@@ -143,24 +170,34 @@ export function periodParserOf(field: string): ((text: string) => Parsed) | unde
   switch (field) {
     case 'accrualStart': case 'accrualEnd': case 'paymentDate':
       return (t) => (DATE.test(t.trim()) ? { ok: true, value: t.trim() } : fail('Type a date (yyyy-mm-dd).'));
-    case 'notional': return (t) => { const n = parseNumber(t); return n === undefined ? fail('Type a number.') : { ok: true, value: n }; };
+    case 'notional': return (t) => (empty(t) ? fail(NOTIONAL_HELP) : notional(t));
     case 'rate': return number;
     default: return undefined;
   }
 }
 
 const amount = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+const millions = new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 });
+/** A notional in millions, as typed: 1,000 for a billion, 2.5 for two and a half million. */
+const inMillions = (v: unknown) => millions.format((v as number) / MILLION);
 const pct = new Intl.NumberFormat('en-US', { minimumFractionDigits: 5, maximumFractionDigits: 5 });
 const plain = (v: unknown) => (typeof v === 'boolean' ? (v ? 'TRUE' : 'FALSE') : String(v));
 
+/**
+ * A column as wide as its values were laid out for (a billion notional), and never narrower than its header reads
+ * whole with its menu and sort mark, charged as ExGrid charges it (ADR-0016). A bare width cut headers to "P…".
+ */
+const fitted = (header: string, values: number) =>
+  Math.max(values, gridHeaderRequiredPx(header, { density: 'compact', menuButton: true, sortable: true }));
+
 const field = (name: string, header: string, type: GridColumn<LineRow>['type'], width: number, format?: (v: unknown) => string): GridColumn<LineRow> => ({
-  name, header, type, width, editable: true, value: (row) => row.view.fields[name] ?? undefined, format: format ?? plain,
+  name, header, type, width: fitted(header, width), editable: true, value: (row) => row.view.fields[name] ?? undefined, format: format ?? plain,
 });
 
 const legHeaders: Readonly<Record<string, readonly [string, GridColumn<LineRow>['type'], number, ((v: unknown) => string)?]>> = {
   currency: ['Ccy', 'text', 56],
   index: ['Index', 'text', 72],
-  notional: ['Notional', 'number', 150, (v) => amount.format(v as number)],
+  notional: ['Notional (mm)', 'number', 90, inMillions],
   quoteKind: ['Quote type', 'text', 84, (v) => quoteLabel[v as string] ?? String(v)],
   quote: ['Rate/Strike', 'number', 92],
   paymentFrequency: ['Pay freq', 'text', 70],
@@ -185,7 +222,7 @@ function legColumns(leg: 1 | 2, expanded: boolean): GridColumn<LineRow>[] {
 }
 
 const figure = (name: string, header: string, type: GridColumn<LineRow>['type'], width: number, read: (f: LineFigures) => unknown, format: (v: unknown) => string): GridColumn<LineRow> => ({
-  name, header, type, width, value: (row) => (row.figures === undefined ? undefined : read(row.figures) ?? undefined), format,
+  name, header, type, width: fitted(header, width), value: (row) => (row.figures === undefined ? undefined : read(row.figures) ?? undefined), format,
 });
 
 export const ACTIONS = 'Actions';
@@ -193,13 +230,10 @@ export const ACTIONS = 'Actions';
 /** The line grid's columns for which legs are expanded. Made once per combination (ExGrid ADR-0003). */
 export function lineColumns(expanded: { readonly leg1: boolean; readonly leg2: boolean }): readonly GridColumn<LineRow>[] {
   return [
-    // Pinned: which line, and what to do with it, stay in view however far the terms scroll.
-    { name: 'line', header: 'Line', type: 'text', width: 56, value: (row) => row.line, format: plain },
-    actionColumn<LineRow>(ACTIONS, [{ name: 'cashflows', label: 'Cashflows' }, { name: 'remove', label: 'Remove' }], { width: 164 }),
-    figure('status', 'Status', 'text', 82, (f) => f.status, plain),
-    figure('pv', 'PV', 'number', 140, (f) => f.pv, (v) => amount.format(v as number)),
-    figure('pvCurrency', 'Ccy', 'text', 52, (f) => f.pvCurrency, plain),
-    figure('par', 'Par / fair %', 'number', 100, (f) => f.par, (v) => pct.format(v as number)),
+    // Pinned: which line, and what to do with it, stay in view however far the terms scroll. Both sized to their content.
+    { name: 'line', header: 'Line', type: 'text', width: { auto: true, minPx: 40, maxPx: 72 }, value: (row) => row.line, format: plain },
+    actionColumn<LineRow>(ACTIONS, [{ name: 'cashflows', label: 'Flows' }, { name: 'remove', label: '✕' }], { header: '', width: { auto: true, minPx: 40, maxPx: 120 } }),
+    // The inputs, left to right as a trade is read: the trade, each leg, its terms.
     field('product', 'Product', 'text', 64, (v) => String(v).toUpperCase()),
     field('start', 'Start', 'text', 96),
     field('end', 'End', 'text', 96),
@@ -209,6 +243,11 @@ export function lineColumns(expanded: { readonly leg1: boolean; readonly leg2: b
     field('collateral', 'Collateral', 'text', 90),
     field('mandatoryBreak', 'Break', 'text', 96),
     field('risk', 'Risk', 'boolean', 56),
+    // The outputs after the inputs (owner, 2026-11-04): what was calculated, then why a line was not.
+    figure('status', 'Status', 'text', 82, (f) => f.status, plain),
+    figure('pv', 'PV', 'number', 140, (f) => f.pv, (v) => amount.format(v as number)),
+    figure('pvCurrency', 'Ccy', 'text', 52, (f) => f.pvCurrency, plain),
+    figure('par', 'Par / fair %', 'number', 100, (f) => f.par, (v) => pct.format(v as number)),
     { name: 'message', header: 'Issues', type: 'text', width: 320, value: (row) => message(row), format: plain },
   ];
 }
@@ -216,26 +255,38 @@ export function lineColumns(expanded: { readonly leg1: boolean; readonly leg2: b
 /** How many columns from the left stay in place: the line and its actions. */
 export const PINNED_COLUMNS = 2;
 
+/** The Header Group ids of the legs, as `onHeaderGroupToggled` names them (ExGrid ADR-0400). */
+export const LEG_GROUPS = { leg1: 'leg1', leg2: 'leg2' } as const;
+
 /**
- * Whether a collapsed leg hides a value the user set, on any line (owner, 2026-10-27): collapsing only hides it,
- * and it is still priced, so the group says so. Stands in for ExGrid's own mark until its Header Group collapses.
+ * How many values the user set hide in each collapsed leg, on any line (owner, 2026-10-27): collapsing only hides
+ * them, and they are still priced, so the group says so with ExGrid's hidden mark.
  */
-export function hiddenEdits(lines: readonly LineView[]): { readonly leg1: boolean; readonly leg2: boolean } {
-  const hides = (n: 1 | 2) => lines.some((l) => legDetail.some((f) => l.userFields.includes(`leg${n}.${f}`)));
+export function hiddenEdits(lines: readonly LineView[]): { readonly leg1: number; readonly leg2: number } {
+  const hides = (n: 1 | 2) => lines.reduce((count, l) => count + legDetail.filter((f) => l.userFields.includes(`leg${n}.${f}`)).length, 0);
   return { leg1: hides(1), leg2: hides(2) };
 }
 
-/** The Header Groups over the columns (ExGrid ADR-0032): one tier naming the result, the trade, each leg and its terms. */
+/**
+ * The Header Groups over the columns (ExGrid ADR-0032): the trade, each leg and its terms, then the result. Each
+ * leg's group draws ExGrid's toggle (ADR-0400), which opens and closes its second level (C43).
+ */
 export function lineHeaderGroups(expanded: { readonly leg1: boolean; readonly leg2: boolean },
-  hidden: { readonly leg1: boolean; readonly leg2: boolean } = { leg1: false, leg2: false }): readonly GridHeaderGroup[] {
-  const leg = (n: 1 | 2, open: boolean) => [...legBasic, ...(open ? legDetail : [])].map((f) => `leg${n}.${f}`);
-  const caption = (n: 1 | 2, open: boolean, hides: boolean) => `Leg ${n} ${open ? '▾' : '▸'}${!open && hides ? ' ●' : ''}`;
+  hidden: { readonly leg1: number; readonly leg2: number } = { leg1: 0, leg2: 0 }): readonly GridHeaderGroup[] {
+  const leg = (n: 1 | 2, open: boolean): GridHeaderGroup => {
+    const count = n === 1 ? hidden.leg1 : hidden.leg2;
+    return {
+      id: n === 1 ? LEG_GROUPS.leg1 : LEG_GROUPS.leg2, label: `Leg ${n}`, expanded: open,
+      columns: [...legBasic, ...(open ? legDetail : [])].map((f) => `leg${n}.${f}`),
+      ...(!open && count > 0 ? { hiddenMark: { state: 'modified', reason: `${count} field(s) you set in hidden columns` } } : {}),
+    };
+  };
   return [
-    { label: 'Result', columns: ['status', 'pv', 'pvCurrency', 'par'] },
     { label: 'Trade', columns: ['product', 'start', 'end', 'direction'] },
-    { label: caption(1, expanded.leg1, hidden.leg1), columns: leg(1, expanded.leg1) },
-    { label: caption(2, expanded.leg2, hidden.leg2), columns: leg(2, expanded.leg2) },
+    leg(1, expanded.leg1),
+    leg(2, expanded.leg2),
     { label: 'Terms', columns: ['collateral', 'mandatoryBreak', 'risk'] },
+    { label: 'Result', columns: ['status', 'pv', 'pvCurrency', 'par'] },
   ];
 }
 
@@ -246,6 +297,33 @@ function message(row: LineRow): string | undefined {
 }
 
 const RESULT = new Set(['status', 'pv', 'pvCurrency', 'par']);
+
+/** One line's result as the strip above the grid shows it, whatever the grid has scrolled to (owner, 2026-11-04). */
+export interface LineResult {
+  readonly line: string;
+  /** `none` until a frame has figures for the line. */
+  readonly status: LineFigures['status'] | 'none';
+  readonly pv?: string;
+  readonly par?: string;
+  /** What the par figure is: the fixed leg's par rate or the floating leg's fair spread. */
+  readonly parLabel?: string;
+  /** Whether the figures were calculated on an older revision than the line shows: never shown as current. */
+  readonly stale: boolean;
+  readonly issues?: string;
+}
+
+export function lineResult(row: LineRow): LineResult {
+  const f = row.figures;
+  const issues = message(row);
+  return {
+    line: row.line,
+    status: f === undefined ? 'none' : f.status,
+    stale: row.figuresStale,
+    ...(f?.pv === undefined ? {} : { pv: `${amount.format(f.pv)}${f.pvCurrency === undefined ? '' : ` ${f.pvCurrency}`}` }),
+    ...(f?.par === undefined ? {} : { par: `${pct.format(f.par)}%`, parLabel: f.parMeasure === 'fairSpread' ? 'Fair spread' : 'Par rate' }),
+    ...(issues === undefined ? {} : { issues }),
+  };
+}
 
 /** A cell's state: the user's edits, held edits, a line that cannot be priced, and figures of an older revision. */
 export function lineCellState(row: LineRow, column: GridColumn<LineRow>): CellState {
@@ -270,7 +348,16 @@ export function lineCellMessage(row: LineRow, column: GridColumn<LineRow>): stri
   if (column.name.startsWith('leg') && row.view.profiles.length > 0 && (column.name.endsWith('.index') || column.name.endsWith('.currency')))
     return `Conventions: ${row.view.profiles.join(', ')}`;
   if (row.view.userFields.includes(column.name)) return 'Set by you.';
+  const source = row.view.defaulted[column.name];
+  if (source !== undefined) return `Default, from ${defaultSource(source)}.`;
   return undefined;
+}
+
+/** Where a default came from, in words (ADR-0008 §4): the workspace's own defaults, a convention profile's template, or a decision. */
+function defaultSource(source: string): string {
+  if (source === 'workspace') return 'the workspace defaults';
+  if (source.startsWith('profile:')) return `the convention profile ${source.slice('profile:'.length)}`;
+  return `decision ${source}`;
 }
 
 /** The figures of each line in a live frame, keyed by line. */
@@ -318,7 +405,7 @@ export const periodColumns: readonly GridColumn<PeriodView>[] = [
   { name: 'accrualStart', header: 'Accrual start', type: 'text', width: 104, editable: true, value: (p) => p.accrualStart, format: plain },
   { name: 'accrualEnd', header: 'Accrual end', type: 'text', width: 104, editable: true, value: (p) => p.accrualEnd, format: plain },
   { name: 'paymentDate', header: 'Payment', type: 'text', width: 104, editable: true, value: (p) => p.paymentDate, format: plain },
-  { name: 'notional', header: 'Notional', type: 'number', width: 140, editable: true, value: (p) => p.notional, format: (v) => amount.format(v as number) },
+  { name: 'notional', header: 'Notional (mm)', type: 'number', width: 110, editable: true, value: (p) => p.notional, format: inMillions },
   { name: 'rate', header: 'Rate/Spread %', type: 'number', width: 110, editable: true, value: (p) => p.rate ?? undefined, format: plain },
   { name: 'yearFraction', header: 'Year fraction', type: 'number', width: 100, value: (p) => p.yearFraction, format: (v) => (v as number).toFixed(6) },
 ];

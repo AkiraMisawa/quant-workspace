@@ -24,7 +24,10 @@ public static class LineFields
         new[] { Product, Start, End, Direction, Collateral, MandatoryBreak, Risk }
             .Concat(new[] { 1, 2 }.SelectMany(n => LegBasic.Concat(LegDetail).Select(f => Leg(n, f))));
 
-    /// <summary>A new line of a product: every field present and empty but the product, its legs' kinds, pay and no risk.</summary>
+    /// <summary>
+    /// A new line of a product: every field present and empty but the product, its legs' kinds, pay, no risk, and for an
+    /// IRS the at-the-money quotes of C47 (spread 0 on the floating leg, the fixed leg at par).
+    /// </summary>
     public static JsonObject Template(RatesProduct product)
     {
         var fields = new JsonObject();
@@ -34,6 +37,13 @@ public static class LineFields
         fields[Risk] = false;
         fields[Leg(1, "floating")] = product == RatesProduct.Ccs;
         fields[Leg(2, "floating")] = true;
+        if (product == RatesProduct.Irs)
+        {
+            // C47: an IRS is at the money unless the user says otherwise: no spread on the floating leg, and the fixed
+            // leg solved at par. A rate or a spread the user gives replaces these; an explicit empty quote keeps par.
+            fields[Leg(2, "quoteKind")] = nameof(QuoteKind.FloatSpreadPercent);
+            fields[Leg(2, "quote")] = 0.0;
+        }
         return fields;
     }
 }

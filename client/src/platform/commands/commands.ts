@@ -17,6 +17,13 @@ export interface CommandArgument {
   readonly hint?: string;
   /** Takes the rest of the line as typed, spaces included (the request to the AI). Only a last required argument. */
   readonly rest?: boolean;
+  /**
+   * With `rest`: the rest of the line is words read in any order (ADR-0008 §3), so completion offers values for the
+   * word being typed now, given the whole rest as typed.
+   */
+  readonly words?: boolean;
+  /** With `words`: how the words typed so far fill the command, part by part, for the line to show. */
+  readonly parts?: (value: string) => readonly { readonly name: string; readonly value?: string; readonly required: boolean }[];
   /** The values this slot offers, given the arguments before it. The line keeps those that match what is typed. */
   readonly complete?: (given: Readonly<Record<string, string>>) => readonly Completion[];
   /** Why a value is refused; undefined when the slot takes it. */
@@ -156,7 +163,8 @@ export function readLine(text: string, commands: readonly Command[]): LineReadin
   if (restArg !== undefined) {
     // Everything after the words, as typed: a request to the AI keeps its spaces.
     const after = lead.slice(lead.toLowerCase().indexOf(command.words) + command.words.length).replace(/^\s+/, '');
-    return { kind: 'arguments', command, given: after === '' ? {} : { [restArg.name]: after }, slot: restArg, typed: after, problems: [] };
+    const typedRest = restArg.words === true ? typedNow : after;
+    return { kind: 'arguments', command, given: after === '' ? {} : { [restArg.name]: after }, slot: restArg, typed: typedRest, problems: [] };
   }
 
   const place = (token: string): void => {
@@ -203,7 +211,8 @@ export function completionsOf(reading: LineReading, commands: readonly Command[]
 export function finish(reading: Extract<LineReading, { kind: 'arguments' }>): { readonly args: Readonly<Record<string, string>> } | { readonly problems: readonly string[] } {
   const { command, slot, typed } = reading;
   const args: Record<string, string> = { ...reading.given };
-  if (slot !== undefined && typed !== '') args[slot.name] = typed;
+  // A rest of words is given whole; what is typed now is only its last word.
+  if (slot !== undefined && typed !== '' && slot.words !== true) args[slot.name] = typed;
   const problems = [...reading.problems];
   const missing = (command.args ?? []).filter((a) => a.required && (args[a.name] ?? '') === '').map((a) => a.name);
   if (missing.length > 0) problems.push(`Missing: ${missing.join(', ')}.`);

@@ -64,6 +64,41 @@ public class RatesCommandTests : IClassFixture<WorkbenchFactory>
         Assert.Contains(log, e => e.Kind == EditKind.Create && e.Target?.Entity == line);
     }
 
+    [Fact] // C47: an IRS given no quote is at the money: spread 0 on the floating leg, the fixed leg solved at par
+    public async Task An_irs_without_quotes_is_at_the_money()
+    {
+        var terms = TenYearSwap();
+        terms.Remove("leg2.quoteKind");
+        terms.Remove("leg2.quote");
+
+        var created = (await Ok(await Command("rates.line.create", "terms", terms)))["outputs"]!["line"]!;
+        var view = await Ok(await client.GetAsync($"/api/rates/workspaces/{created["workspaceId"]!.GetValue<string>()}"));
+        var row = view["lines"]!.AsArray().Single(l => l!["line"]!.GetValue<string>() == created["line"]!.GetValue<string>())!;
+
+        Assert.True(row["priceable"]!.GetValue<bool>());
+        Assert.Equal(1, row["parLeg"]!.GetValue<int>());
+        Assert.Equal("FloatSpreadPercent", row["fields"]!["leg2.quoteKind"]!.GetValue<string>());
+        Assert.Equal(0, row["fields"]!["leg2.quote"]!.GetValue<double>());
+    }
+
+    [Fact] // C47: a fixed rate the user gives makes an off-market swap; the spread stays 0 and no leg is solved
+    public async Task A_given_rate_replaces_par_and_keeps_spread_zero()
+    {
+        var terms = TenYearSwap();
+        terms.Remove("leg2.quoteKind");
+        terms.Remove("leg2.quote");
+        terms["leg1.quoteKind"] = "FixedRatePercent";
+        terms["leg1.quote"] = 1.25;
+
+        var created = (await Ok(await Command("rates.line.create", "terms", terms)))["outputs"]!["line"]!;
+        var view = await Ok(await client.GetAsync($"/api/rates/workspaces/{created["workspaceId"]!.GetValue<string>()}"));
+        var row = view["lines"]!.AsArray().Single(l => l!["line"]!.GetValue<string>() == created["line"]!.GetValue<string>())!;
+
+        Assert.True(row["priceable"]!.GetValue<bool>());
+        Assert.Null(row["parLeg"]);
+        Assert.Equal(0, row["fields"]!["leg2.quote"]!.GetValue<double>());
+    }
+
     [Fact] // ADR-0005 §4: every missing term is refused by name, so the AI asks the user; nothing is created
     public async Task Missing_terms_are_refused_by_name_and_nothing_is_created()
     {
@@ -87,15 +122,14 @@ public class RatesCommandTests : IClassFixture<WorkbenchFactory>
     {
         var before = Workspaces();
         var terms = TenYearSwap();
-        terms.Remove("leg2.quoteKind");
-        terms.Remove("leg2.quote");
+        terms["leg2.notional"] = 2_000_000_000;
         terms["leg2.currency"] = "USD";
 
         var response = await Command("rates.line.create", "terms", terms);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         var messages = (await response.Content.ReadFromJsonAsync<JsonObject>())!["issues"]!.AsArray().Select(i => i!["message"]!.GetValue<string>()).ToList();
-        Assert.Contains(messages, m => m.Contains("Both legs are at par"));
+        Assert.Contains(messages, m => m.Contains("An IRS has one notional"));
         Assert.Contains(messages, m => m.Contains("An IRS has one currency"));
         Assert.Equal(before, Workspaces());
     }

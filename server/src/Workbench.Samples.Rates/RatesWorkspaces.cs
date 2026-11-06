@@ -44,7 +44,25 @@ public sealed record LineView(
     DateOnly? Spot,
     IReadOnlyList<string> Profiles,
     IReadOnlyList<string> Issues,
-    IReadOnlyList<string> Held);
+    IReadOnlyList<string> Held,
+    IReadOnlyDictionary<string, string> Defaulted);
+
+/// <summary>A Rates workspace's defaults for new lines (ADR-0008 §4b), set by its user. A null is no default.</summary>
+public sealed record LineDefaults(string? Currency, double? Notional, string? Direction)
+{
+    public static LineDefaults Of(WorkspaceState state) => state.Context["defaults"] is JsonObject d
+        ? new(d["currency"]?.GetValue<string>(), d["notional"] is { } n ? RatesMaterialiser.Number(n) : null, d["direction"]?.GetValue<string>())
+        : new(null, null, null);
+
+    public JsonObject ToJson()
+    {
+        var json = new JsonObject();
+        if (!string.IsNullOrEmpty(Currency)) json["currency"] = Currency;
+        if (Notional is { } n) json["notional"] = n;
+        if (!string.IsNullOrEmpty(Direction)) json["direction"] = Direction;
+        return json;
+    }
+}
 
 /// <summary>One period of a line's cashflows, for the detail panel; the user's edited fields are named.</summary>
 public sealed record PeriodView(
@@ -71,6 +89,7 @@ public sealed record RatesWorkspaceView(
     string WorkspaceId,
     long Revision,
     DateOnly ValuationDate,
+    LineDefaults Defaults,
     IReadOnlyList<LineView> Lines,
     IReadOnlyList<RatesHeldEdit> Conflicts,
     IReadOnlyList<RatesHeldEdit> Lost,
@@ -112,8 +131,10 @@ public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore stor
             .Select(r => new RatesRunLink(r.RunId, r.Relations.WorkspaceRevision ?? throw new InvalidOperationException($"Run {r.RunId} names a workspace but no revision.")))
             .ToList();
         var lines = RatesMaterialiser.Lines(state, conventions).Select(l => new LineView(l.Line, l.Fields, l.UserFields, l.Priceable, l.ParLeg, l.Spot,
-            [.. l.Legs.Select(g => $"{g.Profile.Id}@{g.Profile.Version}")], l.Issues, l.Held)).ToList();
-        return new(state.WorkspaceId, state.Revision, RatesEditRules.ValuationDate(state), lines,
+            [.. l.Legs.Select(g => $"{g.Profile.Id}@{g.Profile.Version}")], l.Issues, l.Held,
+            // A defaulted field the user has since set is theirs, not a default.
+            (state.Created[l.Line].Sources ?? new Dictionary<string, string>()).Where(p => !l.UserFields.Contains(p.Key)).ToDictionary())).ToList();
+        return new(state.WorkspaceId, state.Revision, RatesEditRules.ValuationDate(state), LineDefaults.Of(state), lines,
             [.. state.Conflicts.Values.OrderBy(c => c.Override.Seq).Select(c => new RatesHeldEdit(c.Override.Target.Scope, c.Override.Target.Entity, c.Override.Target.Field, c.Override.Value, c.Source, false))],
             [.. state.Lost.Values.OrderBy(l => l.Override.Seq).Select(l => new RatesHeldEdit(l.Override.Target.Scope, l.Override.Target.Entity, l.Override.Target.Field, l.Override.Value, null, l.Acknowledged))],
             state.Rederived, links, live.StatusOf(user, workspaceId));
@@ -144,14 +165,32 @@ public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore stor
     /// every reason, before anything is written. Nothing the caller did not give is filled in: the product decides only
     /// which legs float, as a line added on the page does, and an empty quote is the leg solved at par (C40).
     /// </summary>
-    public (WorkspaceState State, string Line) CreateLine(string workspaceId, string user, JsonObject terms, RunOrigin origin, long? expectedRevision = null)
+    public (WorkspaceState State, string Line) CreateLine(string workspaceId, string user, JsonObject terms, RunOrigin origin, long? expectedRevision = null,
+        IReadOnlyDictionary<string, string>? sources = null)
     {
         var state = Owned(workspaceId, user);
         // The page names the revision it saw, as every page edit does; a command acts on the current one.
         var revision = expectedRevision ?? state.Revision;
         var line = $"L{revision + 1}";
         var fields = LineFrom(terms, RatesEditRules.ValuationDate(state));
-        return (Reported(workspaceId, workspaces.Create(workspaceId, revision, user, RatesEditRules.LinesScope, line, fields, origin)), line);
+        return (Reported(workspaceId, workspaces.Create(workspaceId, revision, user, RatesEditRules.LinesScope, line, fields, origin, sources)), line);
+    }
+
+    /// <summary>
+    /// Sets the workspace's defaults for new lines (ADR-0008 §4b): the user's own data, kept in the workspace's context so
+    /// the change is in its log. An empty value removes that default.
+    /// </summary>
+    public WorkspaceState ChangeDefaults(string workspaceId, long revision, string user, LineDefaults defaults)
+    {
+        var state = Owned(workspaceId, user);
+        var issues = new List<string>();
+        if (defaults.Currency is { Length: > 0 } c && conventions.Profiles.All(p => p.Currency != c))
+            issues.Add($"No confirmed conventions name the currency {c}.");
+        if (defaults.Notional is <= 0) issues.Add("A default notional is positive.");
+        if (defaults.Direction is { Length: > 0 } d && d is not ("pay" or "receive")) issues.Add("A default direction is pay or receive.");
+        if (issues.Count > 0) throw new LineTermsRefused(issues);
+        var (next, _) = workspaces.Reacquire(workspaceId, revision, user, Context(RatesEditRules.ValuationDate(state), defaults.ToJson()), NoAcquiredSource);
+        return Reported(workspaceId, next);
     }
 
     /// <summary>A line's fields from its terms, refused with every reason it could not be priced at the valuation date.</summary>
@@ -233,7 +272,8 @@ public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore stor
     public (WorkspaceState State, CarrySummary Summary) ChangeValuationDate(string workspaceId, long revision, string user, DateOnly valuationDate)
     {
         Owned(workspaceId, user);
-        var (state, _) = workspaces.Reacquire(workspaceId, revision, user, Context(valuationDate), NoAcquiredSource);
+        var current = Owned(workspaceId, user);
+        var (state, _) = workspaces.Reacquire(workspaceId, revision, user, Context(valuationDate, current.Context["defaults"]?.AsObject()), NoAcquiredSource);
         return (Reported(workspaceId, state), state.Rederived ?? new CarrySummary(0, 0, 0));
     }
 
@@ -343,5 +383,10 @@ public sealed class RatesWorkspaces(WorkspaceService workspaces, IDataStore stor
 
     static string Sanitise(string id) => id.Replace(':', '-');
 
-    static JsonObject Context(DateOnly valuationDate) => new() { ["valuationDate"] = valuationDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) };
+    static JsonObject Context(DateOnly valuationDate, JsonObject? defaults = null)
+    {
+        var context = new JsonObject { ["valuationDate"] = valuationDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) };
+        if (defaults is { Count: > 0 }) context["defaults"] = defaults.DeepClone();
+        return context;
+    }
 }

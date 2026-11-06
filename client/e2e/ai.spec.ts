@@ -105,3 +105,29 @@ test('ADR-0007 §7, UX03: on a phone-width screen the pane covers the panels, it
   await page.getByRole('button', { name: 'Close the AI pane' }).click();
   await expect(page.getByRole('tab', { name: 'Rates 2026-10-27' })).toHaveAttribute('aria-selected', 'true');
 });
+
+test('ADR-0003, spine 6: a line the AI adds to the open workspace does not make the next edit on the page refused', async ({ page }) => {
+  await open(page);
+  await command(page, 'new rates');
+  await expect(page.getByRole('dialog', { name: 'New Rates workspace' }).getByLabel('Valuation date')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await settled(page, 'Lines');
+
+  // The AI acts on the workspace open in the active panel, so the workspace moves on without this page's queue.
+  await command(page, 'ai', 'make a 10y JPY TONA swap, pay fixed, 1bn, fixed 12m float 12m, spread 0');
+  await expect(cards(page).first()).toHaveAttribute('data-status', 'done');
+  await expect(page.getByTestId('workspace-summary')).toContainText('1 line(s)');
+  await settled(page, 'Lines');
+
+  const row = page.getByLabel('Lines', { exact: true }).getByRole('row', { name: /^L\d+ / }).first();
+  const end = row.locator('[role=gridcell][aria-colindex="5"]');
+  await expect(end).toHaveText('10y');
+  await page.keyboard.press('ControlOrMeta+Shift+G');
+  await page.keyboard.press('ControlOrMeta+Home');
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
+  await page.keyboard.type('7y');
+  await page.keyboard.press('Enter');
+
+  await expect(end).toHaveText('7y');
+  await expect(page.getByText(/was not changed/)).toHaveCount(0);
+});

@@ -106,7 +106,11 @@ public interface IEditRules
 /// An entity the workspace itself holds, because the user created it (ADR-0004). Its initial field values act
 /// as its source values: an edit on it is an override with that base, as on an acquired entity.
 /// </summary>
-public sealed record CreatedEntity(string Scope, string Entity, JsonObject Fields, long Seq);
+/// <param name="Sources">
+/// Where each field the user did not type came from (ADR-0008 §4): a product's template, the workspace's defaults, a
+/// confirmed default. Absent for an entity created before ADR-0008, or whose every field was given.
+/// </param>
+public sealed record CreatedEntity(string Scope, string Entity, JsonObject Fields, long Seq, IReadOnlyDictionary<string, string>? Sources = null);
 
 /// <summary>A created entity read as a source version, so the carry check and overrides treat it as any other.</summary>
 public sealed class CreatedSource(CreatedEntity created) : ISourceVersion

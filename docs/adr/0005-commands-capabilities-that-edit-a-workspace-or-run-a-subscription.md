@@ -42,7 +42,7 @@ Three things stop these from being ordinary capabilities:
 4. **No invented terms.** A command that creates something checks its required inputs and refuses with every
    missing one by name ("currency", "notional", "direction"), and the AI asks the user. It does not fill a default
    the user did not choose; the only defaults are those the user's own data already defines (ADR-0003: a new
-   trade's main CSA), or that a confirmed decision names (C40: an empty quote is solved at par).
+   trade's main CSA), or that a confirmed decision names (C40: an empty quote is solved at par). *(2026-11-06: C47 is such a decision: an IRS given no quote is at the money, spread 0 and the fixed leg at par.)*
 5. **The page and the AI share the service.** The fixed page's endpoints and the commands call the same
    application methods, so neither can do what the other cannot.
 

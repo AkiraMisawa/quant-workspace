@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Badge, Button, Group, Stack, Table, Text, TextInput } from '@mantine/core';
-import { GridSource, type GridActionEvent, type GridColumn, type GridEditIntent } from '@ex-grid/core';
+import { GridSource, type GridActionEvent, type GridColumn, type GridEditIntent, type GridSelection, type HeaderGroupToggle } from '@ex-grid/core';
 import { ExGrid, type ExGridApi } from '@ex-grid/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '../../platform/api';
@@ -12,7 +12,7 @@ import type { FrameStream, RatesApi } from './api';
 import { registerRatesCommands } from './commands';
 import type { CashflowsView, HeldEdit, LiveFrame, PeriodView, RatesWorkspaceView, Resolution } from './contracts';
 import {
-  PINNED_COLUMNS, lineCellMessage, lineCellState, lineColumns, hiddenEdits, lineHeaderGroups, lineRows, parserOf, periodCellState, periodColumns, periodParserOf,
+  LEG_GROUPS, PINNED_COLUMNS, lineCellMessage, lineResult, lineCellState, lineColumns, hiddenEdits, lineHeaderGroups, lineRows, parserOf, periodCellState, periodColumns, periodParserOf,
   type LineRow,
 } from './lines';
 
@@ -27,7 +27,8 @@ type Edit =
   | { readonly kind: 'cashflow'; readonly line: string; readonly period: string; readonly field: string; readonly value: unknown }
   | { readonly kind: 'resolve'; readonly held: HeldEdit; readonly resolution: Resolution }
   | { readonly kind: 'add'; readonly product: 'irs' | 'ccs' }
-  | { readonly kind: 'terms'; readonly terms: Readonly<Record<string, unknown>> }
+  | { readonly kind: 'new'; readonly product: string; readonly terms: string }
+  | { readonly kind: 'defaults'; readonly defaults: RatesWorkspaceView['defaults'] }
   | { readonly kind: 'remove'; readonly line: string };
 
 const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -35,7 +36,7 @@ const describe = (error: unknown) => (error instanceof Error ? error.message : S
 /** Each column set made once: a new column is a new declaration, and every row paints again (ExGrid ADR-0003). */
 const columnSets = new Map<string, ReturnType<typeof lineColumns>>();
 const groupSets = new Map<string, ReturnType<typeof lineHeaderGroups>>();
-function layoutOf(leg1: boolean, leg2: boolean, hides: { readonly leg1: boolean; readonly leg2: boolean }) {
+function layoutOf(leg1: boolean, leg2: boolean, hides: { readonly leg1: number; readonly leg2: number }) {
   const key = `${leg1}/${leg2}`;
   let columns = columnSets.get(key);
   if (columns === undefined) columnSets.set(key, columns = lineColumns({ leg1, leg2 }));
@@ -50,7 +51,7 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
   const queryClient = useQueryClient();
   const view = useQuery({ queryKey: ['rates', workspaceId], queryFn: () => api.view(workspaceId) });
   const market = useQuery({ queryKey: ['rates', 'market'], queryFn: () => api.market(), refetchInterval: 2000 });
-  const conventions = useQuery({ queryKey: ['rates', 'conventions'], queryFn: () => api.conventions(), staleTime: Infinity });
+  const products = useQuery({ queryKey: ['products', 'rates'], queryFn: () => api.products(), staleTime: Infinity });
   const grid = useRef<ExGridApi<LineRow>>(null);
   const [expanded, setExpanded] = useState({ leg1: false, leg2: false });
   const [frame, setFrame] = useState<LiveFrame | undefined>(undefined);
@@ -67,29 +68,43 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
         case 'cashflow': return api.editCashflow(workspaceId, revision, edit.line, edit.period, edit.field, edit.value);
         case 'resolve': return api.resolve(workspaceId, revision, edit.held.scope, edit.held.entity, edit.held.field, edit.resolution);
         case 'add': return (await api.addLine(workspaceId, revision, edit.product)).workspace;
-        case 'terms': return (await api.createLine(workspaceId, revision, edit.terms)).workspace;
+        case 'new': return (await api.newLine(workspaceId, revision, edit.product, edit.terms)).workspace;
+        case 'defaults': return api.changeDefaults(workspaceId, revision, edit.defaults);
         case 'remove': return api.removeLine(workspaceId, revision, edit.line);
       }
     },
     (next) => { show(next); void queryClient.invalidateQueries({ queryKey: ['rates', workspaceId, 'cashflows'] }); },
     (edit, error) => {
-      workspace.notify(edit.kind === 'terms'
+      workspace.notify(edit.kind === 'new'
         ? `The line was not created: ${describe(error)}`
+        : edit.kind === 'defaults' ? `The defaults were not set: ${describe(error)}`
         : `${edit.kind === 'line' || edit.kind === 'cashflow' ? `${edit.line} ${edit.field}` : edit.kind} was not changed: ${describe(error)}`);
       void api.view(workspaceId).then((fresh) => { queue.rebase(fresh.revision); show(fresh); });
     }), [api, workspaceId, show, workspace, queryClient]);
-  const first = view.data?.revision;
-  useEffect(() => { if (first !== undefined && queue.revision === 0) queue.rebase(first); }, [first, queue]);
+  // The queue follows the revision on screen: the one first read, and any read since that someone else moved
+  // (the AI, another page), so the next edit is not refused for a change the user can already see.
+  const shownRevision = view.data?.revision;
+  useEffect(() => { if (shownRevision !== undefined) queue.shown(shownRevision); }, [shownRevision, queue]);
 
   // The rows live in a source keyed by line, so a tick replaces only the rows whose figures moved.
   const source = useMemo(() => GridSource.from<LineRow>([], { rowKey: (row) => row.line }), []);
   const rowsByLine = useRef<ReadonlyMap<string, LineRow>>(new Map());
+  const [shownRows, setShownRows] = useState<ReadonlyMap<string, LineRow>>(new Map());
   useEffect(() => {
     if (view.data === undefined) return;
     const rows = lineRows(view.data.lines, view.data.revision, frame, rowsByLine.current);
     rowsByLine.current = new Map(rows.map((r) => [r.line, r]));
+    setShownRows(rowsByLine.current);
     source.replaceAll(rows);
   }, [view.data, frame, source]);
+
+  // The line the grid's Focus is on, by its key, so its result shows above the grid wherever the grid has scrolled.
+  const [focusLine, setFocusLine] = useState<string | undefined>(undefined);
+  const onSelectionChanged = useCallback((selection: GridSelection) => {
+    if (selection.focus === undefined) { setFocusLine(undefined); return; }
+    const state = source.snapshot();
+    setFocusLine(state.window[selection.focus.row - state.windowStart]?.line);
+  }, [source]);
 
   // Live (owner, 2026-10-27): the workspace's one subscription runs on the server; this page attaches to it
   // while it is open and only detaches when it goes. The server stops it once nobody has watched it for the
@@ -135,6 +150,13 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
     if (!parsed.ok) { intent.refuse(parsed.message); return; }
     void queue.push({ kind: 'line', line: intent.row.line, field: intent.column, value: parsed.value });
   }, [queue]);
+
+  // A leg's Header Group draws ExGrid's toggle; the page holds which legs are open and answers with the columns (ADR-0400).
+  const onLegToggled = useCallback((toggle: HeaderGroupToggle) => {
+    if (toggle.id === LEG_GROUPS.leg1) setExpanded((e) => ({ ...e, leg1: toggle.expanded }));
+    else if (toggle.id === LEG_GROUPS.leg2) setExpanded((e) => ({ ...e, leg2: toggle.expanded }));
+    else throw new Error(`The grid toggled a Header Group it was not given: ${toggle.id}.`);
+  }, []);
 
   const onAction = useCallback((event: GridActionEvent<LineRow>) => {
     if (event.action === 'cashflows') setDetail(event.row.line);
@@ -193,7 +215,7 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
   };
 
   // The page's commands run the same functions as its buttons.
-  const current = { price, startLive, stopLive: () => stopLive(subscription), live: subscription !== undefined, capture, queue, conventions: conventions.data ?? [] };
+  const current = { price, startLive, stopLive: () => stopLive(subscription), live: subscription !== undefined, capture, queue, products: products.data ?? [] };
   const commands = useRef(current);
   commands.current = current;
   useEffect(() => {
@@ -209,12 +231,17 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
       },
       capture: () => void commands.current.capture(),
       addLine: (product) => void commands.current.queue.push({ kind: 'add', product }),
-      createLine: (terms) => void commands.current.queue.push({ kind: 'terms', terms }),
-      conventions: () => commands.current.conventions,
+      newLine: (product, terms) => void commands.current.queue.push({ kind: 'new', product, terms }),
+      setDefaults: (defaults) => {
+        const shown = queryClient.getQueryData<RatesWorkspaceView>(['rates', workspaceId])?.defaults;
+        if (shown === undefined) { workspace.notify('The workspace has not loaded; its defaults were not set.'); return; }
+        void commands.current.queue.push({ kind: 'defaults', defaults: { ...shown, ...defaults } });
+      },
+      products: () => commands.current.products,
     });
     registerGridFocus(panelId, () => grid.current?.focus());
     return () => { registerRatesCommands(panelId, undefined); registerGridFocus(panelId, undefined); };
-  }, [panelId, workspace]);
+  }, [panelId, workspace, queryClient, workspaceId]);
 
   if (view.isPending) return <Text c="dimmed">Loading workspace…</Text>;
   if (view.isError) return <Alert color="red" title="Workspace">{view.error.message}</Alert>;
@@ -228,10 +255,6 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
         <ValuationDate value={ws.valuationDate} disabled={busy !== undefined} onCommit={(d) => void changeValuationDate(d)} />
         <Button size="xs" variant="default" onClick={() => void queue.push({ kind: 'add', product: 'irs' })}>Add IRS</Button>
         <Button size="xs" variant="default" onClick={() => void queue.push({ kind: 'add', product: 'ccs' })}>Add CCS</Button>
-        <Button size="xs" variant={expanded.leg1 ? 'filled' : 'default'} aria-pressed={expanded.leg1}
-          onClick={() => setExpanded((e) => ({ ...e, leg1: !e.leg1 }))}>Leg 1 details</Button>
-        <Button size="xs" variant={expanded.leg2 ? 'filled' : 'default'} aria-pressed={expanded.leg2}
-          onClick={() => setExpanded((e) => ({ ...e, leg2: !e.leg2 }))}>Leg 2 details</Button>
         <Button size="xs" onClick={() => void price()} loading={busy === 'Pricing'} disabled={busy !== undefined && busy !== 'Pricing'}>Price</Button>
         <Button size="xs" color={subscription === undefined ? 'teal' : 'red'} variant="light" data-testid="live-toggle"
           onClick={() => void (subscription === undefined ? startLive() : stopLive(subscription))}>
@@ -259,10 +282,11 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
         <Text size="xs" c="dimmed" data-testid="workspace-summary">{ws.lines.length} line(s) · revision {ws.revision}</Text>
       </Group>
       <HeldEdits conflicts={ws.conflicts} lost={ws.lost} resolve={(held, resolution) => void queue.push({ kind: 'resolve', held, resolution })} />
+      <ResultStrip row={(focusLine === undefined ? undefined : shownRows.get(focusLine)) ?? (shownRows.size === 1 ? [...shownRows.values()][0] : undefined)} />
       <div className="qwb-grid" aria-label="Lines">
         <ExGrid<LineRow> ref={grid} columns={layout.columns} headerGroups={layout.groups} source={source} onEdit={onEdit} onAction={onAction}
           cellState={lineCellState} cellMessage={lineCellMessage} density="compact" viewportWidth="stretch" viewportHeight={height}
-          pinnedColumnCount={PINNED_COLUMNS} locale="en-US" />
+          pinnedColumnCount={PINNED_COLUMNS} locale="en-US" onHeaderGroupToggled={onLegToggled} onSelectionChanged={onSelectionChanged} />
       </div>
       {detail !== undefined && ws.lines.some((l) => l.line === detail) && (
         <Cashflows workspaceId={workspaceId} line={detail} revision={ws.revision} api={api} onClose={() => setDetail(undefined)}
@@ -270,6 +294,27 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
       )}
       {ws.runs.length > 0 && <Text size="xs" c="dimmed">Runs: {ws.runs.map((r) => `${r.runId.slice(-8)} (r${r.revision})`).join(', ')}</Text>}
     </Stack>
+  );
+}
+
+/**
+ * The focused line's result above the grid (owner, 2026-11-04): the result columns stand after the inputs and are off
+ * screen on a narrow display, so what was calculated for the line in hand is shown here whatever the grid scrolled to.
+ */
+function ResultStrip({ row }: { readonly row: LineRow | undefined }) {
+  if (row === undefined) return <Text size="xs" c="dimmed" data-testid="line-result">Select a line to see its result here.</Text>;
+  const r = lineResult(row);
+  const color = r.status === 'priced' ? (r.stale ? 'yellow' : 'teal') : r.status === 'none' ? 'gray' : 'red';
+  return (
+    <Group gap="sm" wrap="wrap" data-testid="line-result" aria-live="polite" aria-label={`Result of ${r.line}`}>
+      <Text size="sm" fw={600}>{r.line}</Text>
+      <Badge variant="light" color={color} data-testid="line-result-status">
+        {r.status === 'none' ? 'no figures yet' : r.status === 'notPriced' ? 'not priced' : r.status}{r.stale ? ' · older revision' : ''}
+      </Badge>
+      {r.pv !== undefined && <Text size="sm" data-testid="line-result-pv">PV {r.pv}</Text>}
+      {r.par !== undefined && <Text size="sm" data-testid="line-result-par">{r.parLabel} {r.par}</Text>}
+      {r.issues !== undefined && <Text size="xs" c="red" data-testid="line-result-issues">{r.issues}</Text>}
+    </Group>
   );
 }
 

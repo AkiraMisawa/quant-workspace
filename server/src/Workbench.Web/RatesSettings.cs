@@ -27,7 +27,8 @@ public sealed class RatesSettings
             if (calendars.All(c => c.Id != p.CalendarId))
                 throw new InvalidOperationException($"Rates convention profile '{p.Id}' names calendar '{p.CalendarId}', which is not available.");
             return new ConventionProfile(p.Id, p.Version, p.Currency, p.Index, p.DayCount.Value, p.CalendarId, p.Adjustment.Value,
-                p.SpotLagDays.Value, p.PaymentLagDays.Value, p.Stub.Value, p.EndOfMonth.Value, p.Overnight.Value);
+                p.SpotLagDays.Value, p.PaymentLagDays.Value, p.Stub.Value, p.EndOfMonth.Value, p.Overnight.Value,
+                p.Standard.Count == 0 ? null : p.Standard);
         }).ToList();
         return new ConventionRegistry(profiles, calendars);
     }
@@ -47,6 +48,8 @@ public sealed class ProfileSetting
     public StubRule? Stub { get; set; }
     public bool? EndOfMonth { get; set; }
     public bool? Overnight { get; set; }
+    /// <summary>The profile's product templates (ADR-0008 §4), such as <c>"irs.fixedFrequency": "12m"</c>.</summary>
+    public Dictionary<string, string> Standard { get; set; } = [];
 }
 
 /// <summary>A synthetic market's starting point. Its levels are inputs to a toy curve, never quotes of any market.</summary>

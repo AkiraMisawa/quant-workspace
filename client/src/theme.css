@@ -25,7 +25,19 @@
   --ex-scrollbar-color: light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-4));
   --ex-tone-negative-color: var(--mantine-color-red-filled);
   --ex-tone-positive-color: var(--mantine-color-teal-filled);
+  --ex-header-group-toggle-color: var(--mantine-primary-color-filled);
   font-variant-numeric: tabular-nums;
+}
+
+/* A Header Group (ex-grid ADR-0029's stable class) reads from its left edge, beside its toggle, and its edges are
+   ruled, so where Trade ends and a leg begins shows even when the group is wider than the screen (owner,
+   2026-11-04). Paint only: a rule is a background image, never a border, so no geometry moves (ex-grid ADR-0027). */
+.qwb-grid .ex-header-group {
+  text-align: left;
+  color: var(--mantine-color-text);
+  background-image:
+    linear-gradient(to right, var(--mantine-color-default-border) 0 1px, transparent 1px),
+    linear-gradient(to top, var(--mantine-color-default-border) 0 1px, transparent 1px);
 }
 
 :root { color-scheme: light dark; }

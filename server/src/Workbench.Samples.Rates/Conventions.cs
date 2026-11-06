@@ -113,7 +113,9 @@ public enum StubRule
 }
 
 /// <summary>
-/// Every convention one leg's schedule needs, for one currency and index. Profiles are registered only once the
+/// Every convention one leg's schedule needs, for one currency and index. <c>Standard</c> holds the profile's product
+/// templates (ADR-0008 §4), such as <c>irs.fixedFrequency</c>: values a new line takes when the user leaves them out,
+/// confirmed with the profile and as unconfirmed as it is. Profiles are registered only once the
 /// owner has confirmed them (C41); the generator never fills a missing convention with a default of its own.
 /// </summary>
 public sealed record ConventionProfile(
@@ -128,4 +130,5 @@ public sealed record ConventionProfile(
     int PaymentLagDays,
     StubRule Stub,
     bool EndOfMonth,
-    bool Overnight);
+    bool Overnight,
+    IReadOnlyDictionary<string, string>? Standard = null);
