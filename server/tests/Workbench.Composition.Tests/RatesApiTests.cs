@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
@@ -88,33 +89,6 @@ public class RatesApiTests : IClassFixture<WorkbenchFactory>
         Assert.Equal(snapshot.Id, frame["market"]!["snapshotId"]!.GetValue<string>());
         Assert.Equal("simulated", frame["calculationMode"]!.GetValue<string>());
         Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/rates/live/{subscription}")).StatusCode);
-    }
-
-    [Fact] // ADR-0006: the command line makes a line from its terms at the revision the page saw, and completes legs from the conventions
-    public async Task A_line_is_created_from_its_terms_at_the_page_revision()
-    {
-        var conventions = (await client.GetFromJsonAsync<JsonArray>("/api/rates/conventions"))!;
-        Assert.Contains(conventions, c => c!["currency"]!.GetValue<string>() == "JPY" && c["index"]!.GetValue<string>() == "TONA");
-
-        var ws = await Ok(await client.PostAsJsonAsync("/api/rates/workspaces", new { valuationDate = "2026-10-27" }));
-        var id = ws["workspaceId"]!.GetValue<string>();
-        var revision = ws["revision"]!.GetValue<long>();
-        var terms = new JsonObject
-        {
-            ["product"] = "irs", ["end"] = "10y", ["direction"] = "pay",
-            ["leg1.currency"] = "JPY", ["leg1.index"] = "TONA", ["leg1.notional"] = 3_000_000_000, ["leg1.paymentFrequency"] = "12m",
-            ["leg2.currency"] = "JPY", ["leg2.index"] = "TONA", ["leg2.notional"] = 3_000_000_000, ["leg2.paymentFrequency"] = "12m",
-            ["leg2.quoteKind"] = "FloatSpreadPercent", ["leg2.quote"] = 0,
-        };
-
-        var stale = await client.PostAsJsonAsync($"/api/rates/workspaces/{id}/lines/terms", new { revision = revision - 1, terms });
-        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
-
-        var added = await Ok(await client.PostAsJsonAsync($"/api/rates/workspaces/{id}/lines/terms", new { revision, terms }));
-        var line = added["line"]!.GetValue<string>();
-        Assert.True(added["workspace"]!["lines"]!.AsArray().Single(l => l!["line"]!.GetValue<string>() == line)!["priceable"]!.GetValue<bool>());
-        var log = host.Services.GetRequiredService<Workbench.Composition.Application.Workspaces.WorkspaceService>().Find(id)!.Log;
-        Assert.Equal(Workbench.Composition.Application.RunOrigin.Pricer, log.Single(e => e.Kind == Workbench.Composition.Application.Workspaces.EditKind.Create).Origin);
     }
 
     async Task<(string Id, long Revision)> Workspace()
@@ -216,5 +190,43 @@ public class RatesApiTests : IClassFixture<WorkbenchFactory>
         Assert.Equal((HttpStatusCode)422, response.StatusCode);
         Assert.Contains((await response.Content.ReadFromJsonAsync<JsonObject>())!["issues"]!.AsArray(),
             i => i!["path"]!.GetValue<string>() == "/terms/notional");
+    }
+
+    /// <summary>The fake's figures, but it declares that it prices IRS only (ADR-0008 §8).</summary>
+    sealed class IrsOnly : IRatesPricingProvider
+    {
+        readonly FakeRatesPricing fake = new();
+        public string Name => "irs-only";
+        public IReadOnlyList<PricedProduct> Products { get; } = [new(RatesProducts.Irs, RatesProducts.Version)];
+        public Task<RatesBatchResult> PriceBatchAsync(RatesBatchInput input, CancellationToken cancellationToken) =>
+            input.Lines.Any(l => l.Legs.Select(g => g.Terms.Currency).Distinct().Count() > 1)
+                ? throw new InvalidOperationException("A CCS line reached a provider that does not price it.")
+                : fake.PriceBatchAsync(input, cancellationToken);
+    }
+
+    [Fact] // ADR-0008 §8: a line whose product no provider prices is listed as not priced with that reason, never sent elsewhere
+    public async Task A_product_no_provider_prices_is_not_priced_and_says_why()
+    {
+        using var irsOnly = host.WithWebHostBuilder(b => b.ConfigureServices(s => s.AddSingleton<IRatesPricingProvider, IrsOnly>()));
+        var http = irsOnly.CreateClient();
+        var ws = await Ok(await http.PostAsJsonAsync("/api/rates/workspaces", new { valuationDate = "2026-10-27" }));
+        var id = ws["workspaceId"]!.GetValue<string>();
+        var irs = await Ok(await http.PostAsJsonAsync($"/api/rates/workspaces/{id}/lines/new",
+            new { revision = ws["revision"]!.GetValue<long>(), product = "rates.irs", terms = "jpy 10y 3bn rec" }));
+        var ccs = await Ok(await http.PostAsJsonAsync($"/api/rates/workspaces/{id}/lines/new",
+            new { revision = irs["workspace"]!["revision"]!.GetValue<long>(), product = "rates.ccs", terms = "5y usd jpy 100 15bn pay spread2=-30bp" }));
+        var snapshot = await irsOnly.Services.GetRequiredService<MarketFeed>().AdvanceAsync();
+
+        var response = await http.PostAsJsonAsync($"/api/rates/workspaces/{id}/price",
+            new { revision = ccs["workspace"]!["revision"]!.GetValue<long>(), idempotencyKey = "p8", marketSnapshotId = snapshot.Id });
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var run = (await response.Content.ReadFromJsonAsync<JsonObject>())!;
+        var reference = run["workflow"]!["steps"]![0]!["bindings"]!["acceptedInput"]!["reference"].Deserialize<Workbench.Composition.Contracts.TypedDataRef>(Workbench.Composition.Contracts.WireJson.Options)!;
+        var accepted = Assert.IsType<Workbench.Composition.Application.DataLookup.Found>(irsOnly.Services.GetRequiredService<Workbench.Composition.Application.IDataStore>().Read(reference));
+        var notPriced = accepted.Content["notPriced"]!.AsArray();
+        var left = Assert.Single(notPriced)!;
+        Assert.Equal(ccs["line"]!.GetValue<string>(), left["line"]!.GetValue<string>());
+        Assert.Contains("No pricing provider prices rates.ccs 1.0.0; irs-only prices rates.irs 1.0.0.", left["reasons"]!.AsArray().Select(r => r!.GetValue<string>()));
     }
 }

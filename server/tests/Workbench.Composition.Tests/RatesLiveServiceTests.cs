@@ -13,6 +13,7 @@ public class RatesLiveServiceTests
         public readonly ConcurrentQueue<(RatesBatchInput Input, TaskCompletionSource<RatesBatchResult> Result)> Calls = new();
         readonly SemaphoreSlim arrived = new(0);
         public string Name => "held";
+        public IReadOnlyList<PricedProduct> Products { get; } = [new(RatesProducts.Irs, RatesProducts.Version), new(RatesProducts.Ccs, RatesProducts.Version)];
 
         public Task<RatesBatchResult> PriceBatchAsync(RatesBatchInput input, CancellationToken cancellationToken)
         {

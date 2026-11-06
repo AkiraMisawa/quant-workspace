@@ -42,11 +42,22 @@ registerAiContext(RATES_WORKSPACE, (panel) => panel.params.workspaceId === undef
   description: 'The Rates workspace open in the active panel',
   value: JSON.stringify({ kind: 'rates.workspace', workspaceId: panel.params.workspaceId }),
 });
-registerAiEffect('rates.line.create', (outputs, { workspace, queryClient }) => {
-  const line = outputs.line as { readonly workspaceId: string; readonly valuationDate: string };
-  void queryClient.invalidateQueries({ queryKey: ['rates', line.workspaceId] });
-  const title = `Rates ${line.valuationDate}`;
-  return { panelId: workspace.openPanelBehind(RATES_WORKSPACE, title, { workspaceId: line.workspaceId }), title };
+registerAiEffect('rates.workspace.create', (outputs, { workspace }) => {
+  const made = outputs.workspace as { readonly workspaceId: string; readonly valuationDate: string };
+  const title = `Rates ${made.valuationDate}`;
+  return { panelId: workspace.openPanelBehind(RATES_WORKSPACE, title, { workspaceId: made.workspaceId }), title };
+});
+// `entity.create` is the kernel's (ADR-0008 §5); a Rates product's line is fetched again where its workspace is shown,
+// and its workspace opened behind the panel in use when it is not open yet.
+registerAiEffect('entity.create', (outputs, { workspace, queryClient }) => {
+  const entity = outputs.entity as { readonly workspaceId: string; readonly product: string };
+  if (!entity.product.startsWith('rates.')) return undefined;
+  void queryClient.invalidateQueries({ queryKey: ['rates', entity.workspaceId] });
+  const open = workspace.panels.some((p) => p.kind === 'app' && p.app === RATES_WORKSPACE && p.params.workspaceId === entity.workspaceId);
+  if (open) return undefined;
+  const valuationDate = queryClient.getQueryData<{ readonly valuationDate: string }>(['rates', entity.workspaceId])?.valuationDate;
+  const title = valuationDate === undefined ? 'Rates' : `Rates ${valuationDate}`;
+  return { panelId: workspace.openPanelBehind(RATES_WORKSPACE, title, { workspaceId: entity.workspaceId }), title };
 });
 for (const capability of ['rates.live.start', 'rates.live.stop'])
   registerAiEffect(capability, (outputs, { queryClient }) => {

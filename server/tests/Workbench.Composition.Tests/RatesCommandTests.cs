@@ -23,18 +23,20 @@ public class RatesCommandTests : IClassFixture<WorkbenchFactory>
         client = host.CreateClient();
     }
 
-    static JsonObject TenYearSwap(string? workspaceId = null) => new()
-    {
-        [workspaceId is null ? "valuationDate" : "workspaceId"] = workspaceId ?? "2026-10-27",
-        ["product"] = "irs", ["end"] = "10y", ["direction"] = "pay",
-        ["leg1.currency"] = "JPY", ["leg1.index"] = "TONA", ["leg1.notional"] = 1_000_000_000, ["leg1.paymentFrequency"] = "12m",
-        ["leg2.currency"] = "JPY", ["leg2.index"] = "TONA", ["leg2.notional"] = 1_000_000_000, ["leg2.paymentFrequency"] = "12m",
-        ["leg2.quoteKind"] = "FloatSpreadPercent", ["leg2.quote"] = 0,
-    };
+    const string TenYearSwap = "jpy 10y 1bn pay";
 
     Task<HttpResponseMessage> Command(string capability, string port, JsonObject value, string? key = null) =>
         client.PostAsJsonAsync($"/api/agent/commands/{capability}/1.0.0",
             new { inputs = new JsonObject { [port] = value }, idempotencyKey = key ?? Guid.NewGuid().ToString() });
+
+    Task<HttpResponseMessage> Create(string workspaceId, string terms, string? key = null) =>
+        Command("entity.create", "request", new JsonObject { ["product"] = RatesProducts.Irs, ["workspaceId"] = workspaceId, ["terms"] = terms }, key);
+
+    async Task<string> NewWorkspace() =>
+        (await Ok(await Command("rates.workspace.create", "request", new JsonObject { ["valuationDate"] = "2026-10-27" })))["outputs"]!["workspace"]!["workspaceId"]!.GetValue<string>();
+
+    async Task<JsonObject> Row(string workspaceId, string line) =>
+        (await Ok(await client.GetAsync($"/api/rates/workspaces/{workspaceId}")))["lines"]!.AsArray().Single(l => l!["line"]!.GetValue<string>() == line)!.AsObject();
 
     static async Task<JsonObject> Ok(HttpResponseMessage response)
     {
@@ -42,21 +44,17 @@ public class RatesCommandTests : IClassFixture<WorkbenchFactory>
         return (await response.Content.ReadFromJsonAsync<JsonObject>())!;
     }
 
-    int Workspaces() => host.Services.GetRequiredService<RatesWorkspaces>().OwnedBy("demo").Count;
-
-    [Fact] // ADR-0005 §3, §5: a line the AI creates is the page's line, priceable, and logged as the AI's edit
+    [Fact] // ADR-0005 §3, §5, ADR-0008 §5: the AI makes a workspace and a line in it from short terms; the log says both were the AI's
     public async Task The_AI_creates_a_line_in_a_new_workspace_and_the_log_says_so()
     {
-        var done = await Ok(await Command("rates.line.create", "terms", TenYearSwap()));
-        var created = done["outputs"]!["line"]!;
-        var id = created["workspaceId"]!.GetValue<string>();
-        var line = created["line"]!.GetValue<string>();
+        var id = await NewWorkspace();
+        var created = (await Ok(await Create(id, TenYearSwap)))["outputs"]!["entity"]!;
+        var line = created["entity"]!.GetValue<string>();
 
-        var view = await Ok(await client.GetAsync($"/api/rates/workspaces/{id}"));
-        var row = view["lines"]!.AsArray().Single(l => l!["line"]!.GetValue<string>() == line)!;
+        var row = await Row(id, line);
         Assert.True(row["priceable"]!.GetValue<bool>());
         Assert.Equal(1, row["parLeg"]!.GetValue<int>());
-        Assert.Equal("2026-10-27", view["valuationDate"]!.GetValue<string>());
+        Assert.Contains("fixedFrequency from profile:", created["defaulted"]!.GetValue<string>());
 
         var log = host.Services.GetRequiredService<WorkspaceService>().Find(id)!.Log;
         // The schedule the line derives is the workspace's own work, not anybody's edit, and states no origin.
@@ -67,13 +65,8 @@ public class RatesCommandTests : IClassFixture<WorkbenchFactory>
     [Fact] // C47: an IRS given no quote is at the money: spread 0 on the floating leg, the fixed leg solved at par
     public async Task An_irs_without_quotes_is_at_the_money()
     {
-        var terms = TenYearSwap();
-        terms.Remove("leg2.quoteKind");
-        terms.Remove("leg2.quote");
-
-        var created = (await Ok(await Command("rates.line.create", "terms", terms)))["outputs"]!["line"]!;
-        var view = await Ok(await client.GetAsync($"/api/rates/workspaces/{created["workspaceId"]!.GetValue<string>()}"));
-        var row = view["lines"]!.AsArray().Single(l => l!["line"]!.GetValue<string>() == created["line"]!.GetValue<string>())!;
+        var id = await NewWorkspace();
+        var row = await Row(id, (await Ok(await Create(id, TenYearSwap)))["outputs"]!["entity"]!["entity"]!.GetValue<string>());
 
         Assert.True(row["priceable"]!.GetValue<bool>());
         Assert.Equal(1, row["parLeg"]!.GetValue<int>());
@@ -84,63 +77,53 @@ public class RatesCommandTests : IClassFixture<WorkbenchFactory>
     [Fact] // C47: a fixed rate the user gives makes an off-market swap; the spread stays 0 and no leg is solved
     public async Task A_given_rate_replaces_par_and_keeps_spread_zero()
     {
-        var terms = TenYearSwap();
-        terms.Remove("leg2.quoteKind");
-        terms.Remove("leg2.quote");
-        terms["leg1.quoteKind"] = "FixedRatePercent";
-        terms["leg1.quote"] = 1.25;
-
-        var created = (await Ok(await Command("rates.line.create", "terms", terms)))["outputs"]!["line"]!;
-        var view = await Ok(await client.GetAsync($"/api/rates/workspaces/{created["workspaceId"]!.GetValue<string>()}"));
-        var row = view["lines"]!.AsArray().Single(l => l!["line"]!.GetValue<string>() == created["line"]!.GetValue<string>())!;
+        var id = await NewWorkspace();
+        var row = await Row(id, (await Ok(await Create(id, $"{TenYearSwap} 1.25%")))["outputs"]!["entity"]!["entity"]!.GetValue<string>());
 
         Assert.True(row["priceable"]!.GetValue<bool>());
         Assert.Null(row["parLeg"]);
+        Assert.Equal(1.25, row["fields"]!["leg1.quote"]!.GetValue<double>());
         Assert.Equal(0, row["fields"]!["leg2.quote"]!.GetValue<double>());
     }
 
-    [Fact] // ADR-0005 §4: every missing term is refused by name, so the AI asks the user; nothing is created
+    [Fact] // ADR-0005 §4, ADR-0008 §4c: every term no default supplies is refused by name, so the AI asks the user; nothing is created
     public async Task Missing_terms_are_refused_by_name_and_nothing_is_created()
     {
-        var before = Workspaces();
+        var id = await NewWorkspace();
 
-        var response = await Command("rates.line.create", "terms", new JsonObject { ["valuationDate"] = "2026-10-27", ["product"] = "irs", ["end"] = "10y" });
+        var response = await Create(id, "10y");
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         var paths = (await response.Content.ReadFromJsonAsync<JsonObject>())!["issues"]!.AsArray().Select(i => i!["path"]!.GetValue<string>()).ToHashSet();
         Assert.Equal(new HashSet<string>
         {
-            "/inputs/terms/direction",
-            "/inputs/terms/leg1.currency", "/inputs/terms/leg1.index", "/inputs/terms/leg1.notional", "/inputs/terms/leg1.paymentFrequency",
-            "/inputs/terms/leg2.currency", "/inputs/terms/leg2.index", "/inputs/terms/leg2.notional", "/inputs/terms/leg2.paymentFrequency",
+            "/inputs/request/terms/currency", "/inputs/request/terms/index", "/inputs/request/terms/notional", "/inputs/request/terms/direction",
+            "/inputs/request/terms/fixedFrequency", "/inputs/request/terms/floatFrequency",
         }, paths);
-        Assert.Equal(before, Workspaces());
+        Assert.Empty((await Ok(await client.GetAsync($"/api/rates/workspaces/{id}")))["lines"]!.AsArray());
     }
 
-    [Fact] // ADR-0005 §4, C40: terms that could not be priced are refused with the resolver's reasons, never completed
+    [Fact] // ADR-0005 §4, ADR-0008 §7: terms that read but could not be priced are refused with the resolver's reasons
     public async Task Unpriceable_terms_are_refused_with_every_reason()
     {
-        var before = Workspaces();
-        var terms = TenYearSwap();
-        terms["leg2.notional"] = 2_000_000_000;
-        terms["leg2.currency"] = "USD";
+        var id = await NewWorkspace();
 
-        var response = await Command("rates.line.create", "terms", terms);
+        // A CCS with no basis spread reads as complete, and the Rates module's economic check still refuses it.
+        var ccs = await Command("entity.create", "request", new JsonObject { ["product"] = RatesProducts.Ccs, ["workspaceId"] = id, ["terms"] = "5y usd jpy 100 15bn pay" });
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
-        var messages = (await response.Content.ReadFromJsonAsync<JsonObject>())!["issues"]!.AsArray().Select(i => i!["message"]!.GetValue<string>()).ToList();
-        Assert.Contains(messages, m => m.Contains("An IRS has one notional"));
-        Assert.Contains(messages, m => m.Contains("An IRS has one currency"));
-        Assert.Equal(before, Workspaces());
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, ccs.StatusCode);
+        var messages = (await ccs.Content.ReadFromJsonAsync<JsonObject>())!["issues"]!.AsArray().Select(i => i!["message"]!.GetValue<string>()).ToList();
+        Assert.Contains(messages, m => m.Contains("at par"));
+        Assert.Empty((await Ok(await client.GetAsync($"/api/rates/workspaces/{id}")))["lines"]!.AsArray());
     }
 
     [Fact] // ADR-0005 §2: a retry with the same key answers the first result; it does not add a second line
     public async Task A_retried_command_does_not_act_twice()
     {
-        var first = await Ok(await Command("rates.line.create", "terms", TenYearSwap(), "retry-1"));
-        var id = first["outputs"]!["line"]!["workspaceId"]!.GetValue<string>();
-        var retry = await Ok(await Command("rates.line.create", "terms", TenYearSwap(), "retry-1"));
-        var other = await Command("rates.line.create", "terms", TenYearSwap(id), "retry-1");
+        var id = await NewWorkspace();
+        var first = await Ok(await Create(id, TenYearSwap, "retry-1"));
+        var retry = await Ok(await Create(id, TenYearSwap, "retry-1"));
+        var other = await Create(id, "jpy 5y 1bn pay", "retry-1");
 
         Assert.Equal(first.ToJsonString(), retry.ToJsonString());
         Assert.Equal(HttpStatusCode.Conflict, other.StatusCode);
@@ -150,7 +133,8 @@ public class RatesCommandTests : IClassFixture<WorkbenchFactory>
     [Fact] // ADR-0005 §5, owner 2026-10-27: the AI joins the page's subscription rather than starting a second, and its stop is recorded
     public async Task The_AI_joins_the_running_subscription_and_its_stop_is_recorded()
     {
-        var id = (await Ok(await Command("rates.line.create", "terms", TenYearSwap())))["outputs"]!["line"]!["workspaceId"]!.GetValue<string>();
+        var id = await NewWorkspace();
+        await Ok(await Create(id, TenYearSwap));
         var page = (await Ok(await client.PostAsync($"/api/rates/workspaces/{id}/live", null)))["subscriptionId"]!.GetValue<string>();
 
         var started = await Ok(await Command("rates.live.start", "workspace", new JsonObject { ["workspaceId"] = id }));
@@ -171,9 +155,9 @@ public class RatesCommandTests : IClassFixture<WorkbenchFactory>
         var registry = host.Services.GetRequiredService<CompositionRegistry>();
         var workflow = new WorkflowDefinition("workflow", CompositionValidator.SchemaVersion, "workflow.test.command", "1.0.0", "Command as a step",
             RatesContracts.PriceInput, RatesContracts.Version,
-            [new WorkflowStep("create", "rates.line.create", RatesContracts.Version, [],
-                new Dictionary<string, Binding> { ["terms"] = new ConstantBinding(TenYearSwap()) }, FailurePolicy.Stop)],
-            new Dictionary<string, Binding> { ["line"] = new OutputBinding("create", "line") });
+            [new WorkflowStep("create", "entity.create", "1.0.0", [],
+                new Dictionary<string, Binding> { ["request"] = new ConstantBinding(new JsonObject { ["product"] = RatesProducts.Irs, ["workspaceId"] = "ws", ["terms"] = TenYearSwap }) }, FailurePolicy.Stop)],
+            new Dictionary<string, Binding> { ["entity"] = new OutputBinding("create", "entity") });
 
         Assert.Contains(new CompositionValidator(registry).Validate(workflow), i => i.Code == "CommandAsStep");
     }

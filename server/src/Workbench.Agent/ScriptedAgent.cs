@@ -22,7 +22,16 @@ public interface IScriptedRequest
     /// <summary>Where in the request it is asked for (lower case), or null when it is not.</summary>
     int? FindIn(string request);
 
-    /// <summary>The command's inputs, by port. Only terms the request or the context states; nothing is defaulted.</summary>
+    /// <summary>
+    /// Whether the call is wanted given the context and the calls already done, for a request whose words alone do not
+    /// say (a new workspace is made only when none is open, or when the request asks for one).
+    /// </summary>
+    bool Wanted(ScriptedStep step) => true;
+
+    /// <summary>
+    /// The command's inputs, by port. Only terms the request or the context states; whatever else a term needs comes
+    /// from the command's own confirmed defaults or is refused by name (ADR-0008 §4).
+    /// </summary>
     JsonObject Inputs(ScriptedStep step);
 
     /// <summary>The sentence that reports a done call.</summary>
@@ -89,13 +98,14 @@ public sealed class ScriptedAgent(IEnumerable<IScriptedRequest> requests) : IAge
             return Reply(Refusal(refused, plan));
 
         var done = earlier.Concat(now).Select(r => (r.CapabilityId, r.Outputs)).ToList();
-        var next = plan.FirstOrDefault(p => done.All(d => d.CapabilityId != p.CapabilityId));
+        var step = new ScriptedStep(request, turn.Context, done);
+        var next = plan.FirstOrDefault(p => done.All(d => d.CapabilityId != p.CapabilityId) && p.Wanted(step));
         if (next is not null)
         {
             var name = AgentToolGateway.NameOf(next.CapabilityId);
             if (turn.Tools.All(t => t.Name != name))
                 return Reply($"{next.CapabilityId} is not offered to me, so I cannot do that.");
-            var inputs = next.Inputs(new(request, turn.Context, done));
+            var inputs = next.Inputs(step);
             return (null, new($"call-{Guid.CreateVersion7():N}", name, inputs.ToJsonString()));
         }
         if (now.Count == 0) return Reply("That was done already; there is nothing more to do for it.");

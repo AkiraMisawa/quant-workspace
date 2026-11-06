@@ -71,13 +71,14 @@ public class AgentApiTests : IClassFixture<WorkbenchFactory>
         Assert.Equal("RUN_FINISHED", Types(events).Last());
         Assert.Equal("scripted", events[0]["metadata"]!["workbench"]!["runtime"]!.GetValue<string>());
         Assert.True(events[0]["metadata"]!["workbench"]!["simulated"]!.GetValue<bool>());
-        Assert.Equal(["rates_line_create", "rates_live_start"],
+        Assert.Equal(["rates_workspace_create", "entity_create", "rates_live_start"],
             events.Where(e => e["type"]!.GetValue<string>() == "TOOL_CALL_START").Select(e => e["toolCallName"]!.GetValue<string>()));
         var results = Results(events);
         Assert.All(results, r => Assert.Equal("done", r["status"]!.GetValue<string>()));
 
-        var id = results[0]["outputs"]!["line"]!["workspaceId"]!.GetValue<string>();
-        Assert.Equal(id, results[1]["outputs"]!["subscription"]!["workspaceId"]!.GetValue<string>());
+        var id = results[0]["outputs"]!["workspace"]!["workspaceId"]!.GetValue<string>();
+        Assert.Equal(id, results[1]["outputs"]!["entity"]!["workspaceId"]!.GetValue<string>());
+        Assert.Equal(id, results[2]["outputs"]!["subscription"]!["workspaceId"]!.GetValue<string>());
         var view = (await client.GetFromJsonAsync<JsonObject>($"/api/rates/workspaces/{id}"))!;
         Assert.Equal("2026-10-27", view["valuationDate"]!.GetValue<string>());
         Assert.True(view["lines"]!.AsArray().Single()!["priceable"]!.GetValue<bool>());
@@ -87,33 +88,39 @@ public class AgentApiTests : IClassFixture<WorkbenchFactory>
         Assert.Contains($"workspace {id}", Reply(events), StringComparison.Ordinal);
     }
 
-    [Fact] // ADR-0005 §4, ADR-0007 §6: what the request leaves out is refused by name and asked for; the answer completes it,
-           // even when it asks for more ("and start ticking" ticks the line the answer made)
+    [Fact] // ADR-0005 §4, ADR-0007 §6, ADR-0008 §4: what no default supplies is refused by name and asked for; the answer
+           // completes it, even when it asks for more ("and start ticking" ticks the line the answer made)
     public async Task Missing_terms_are_asked_for_and_the_answer_completes_the_request()
     {
         var before = Workspaces();
 
         var asked = await Events(await Post(Input("t-2", "r-1", ("m-1", "make a 10y JPY TONA swap, 1bn, valuation date 2026-10-27"))));
 
-        var refusal = Assert.Single(Results(asked));
-        Assert.Equal("refused", refusal["status"]!.GetValue<string>());
-        var reply = Reply(asked);
-        foreach (var missing in new[] { "direction", "leg1.paymentFrequency", "leg2.paymentFrequency" }) Assert.Contains(missing, reply, StringComparison.Ordinal);
-        Assert.Equal(before, Workspaces());
+        // The workspace is made; the line is refused for its direction alone, since the profile's template gives the
+        // frequencies and C47 the quotes.
+        var results = Results(asked);
+        Assert.Equal(["rates.workspace.create", "entity.create"], results.Select(r => r["capability"]!.GetValue<string>()));
+        Assert.Equal("refused", results[1]["status"]!.GetValue<string>());
+        Assert.Equal(["/inputs/request/terms/direction"], results[1]["issues"]!.AsArray().Select(i => i!["path"]!.GetValue<string>()));
+        Assert.Contains("direction", Reply(asked), StringComparison.Ordinal);
+        var id = results[0]["outputs"]!["workspace"]!["workspaceId"]!.GetValue<string>();
 
         var answered = await Events(await Post(Input("t-2", "r-2", ("m-1", "ignored: the server already holds m-1"),
-            ("m-2", "pay fixed, fixed 12m float 12m, spread 0 and start ticking"))));
+            ("m-2", "pay fixed and start ticking"))));
 
-        var results = Results(answered);
-        Assert.Equal(["rates.line.create", "rates.live.start"], results.Select(r => r["capability"]!.GetValue<string>()));
+        results = Results(answered);
+        Assert.Equal(["entity.create", "rates.live.start"], results.Select(r => r["capability"]!.GetValue<string>()));
         Assert.All(results, r => Assert.Equal("done", r["status"]!.GetValue<string>()));
-        Assert.Equal(results[0]["outputs"]!["line"]!["workspaceId"]!.GetValue<string>(), results[1]["outputs"]!["subscription"]!["workspaceId"]!.GetValue<string>());
+        // The answer's line goes into the workspace the first turn made, not a second one.
+        Assert.Equal(id, results[0]["outputs"]!["entity"]!["workspaceId"]!.GetValue<string>());
+        Assert.Equal(id, results[1]["outputs"]!["subscription"]!["workspaceId"]!.GetValue<string>());
         Assert.Equal(before + 1, Workspaces());
 
-        // A request after one that was done starts afresh: it takes none of the earlier terms.
+        // A request after one that was done starts afresh: it takes none of the earlier terms, and with no workspace open
+        // and no valuation date it has nowhere to go.
         var fresh = Results(await Events(await Post(Input("t-2", "r-3", ("m-3", "make a 5y swap"))))).Single();
         Assert.Equal("refused", fresh["status"]!.GetValue<string>());
-        Assert.Contains("/inputs/terms/direction", fresh["issues"]!.AsArray().Select(i => i!["path"]!.GetValue<string>()));
+        Assert.Contains("/inputs/request/workspaceId", fresh["issues"]!.AsArray().Select(i => i!["path"]!.GetValue<string>()));
     }
 
     [Fact] // ADR-0007 §2, §4 (AI04): a run posted again is read again, never run twice, and can be read from where a reader stopped
@@ -130,7 +137,8 @@ public class AgentApiTests : IClassFixture<WorkbenchFactory>
         Assert.Equal(first.Skip(2).Select(e => e.ToJsonString()), rest.Select(e => e.ToJsonString()));
 
         var thread = (await client.GetFromJsonAsync<JsonObject>("/api/agent/threads/t-3"))!;
-        Assert.Equal(["user", "assistant", "tool", "assistant"], thread["messages"]!.AsArray().Select(m => m!["role"]!.GetValue<string>()));
+        // Two calls: the workspace, then the line in it (ADR-0008 §5).
+        Assert.Equal(["user", "assistant", "tool", "assistant", "tool", "assistant"], thread["messages"]!.AsArray().Select(m => m!["role"]!.GetValue<string>()));
         Assert.Null(thread["activeRunId"]);
     }
 

@@ -47,7 +47,9 @@ Three things stop these from being ordinary capabilities:
    application methods, so neither can do what the other cannot.
 
 The Rates commands are `rates.line.create` (one line from its terms, in a workspace of the caller's, created if
-none is named, with the valuation date given), `rates.live.start` and `rates.live.stop`. Pricing once stays
+none is named, with the valuation date given), `rates.live.start` and `rates.live.stop`. *(2026-11-06, ADR-0008 §5:
+`rates.line.create` is replaced by the kernel's `entity.create`, which takes the command line's short terms for an
+existing workspace, and `rates.workspace.create`, which makes an empty workspace at a valuation date.)* Pricing once stays
 `rates.price`, a Run, reached through a workflow over the frozen accepted input, as now.
 
 ## Consequences
