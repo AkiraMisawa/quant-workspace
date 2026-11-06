@@ -1,5 +1,6 @@
 import { call } from '../../platform/api';
 import type { RunRecord } from '../../platform/contracts';
+import type { ProductDescriptor } from '../../platform/products';
 import type { CarrySummary, CashflowsView, LiveFrame, MarketView, RatesWorkspaceView, Resolution } from './contracts';
 
 const base = (workspaceId: string) => `/api/rates/workspaces/${encodeURIComponent(workspaceId)}`;
@@ -14,8 +15,12 @@ export interface RatesApi {
   create(valuationDate: string): Promise<RatesWorkspaceView>;
   view(workspaceId: string): Promise<RatesWorkspaceView>;
   addLine(workspaceId: string, revision: number, product: 'irs' | 'ccs'): Promise<{ readonly line: string; readonly workspace: RatesWorkspaceView }>;
-  createLine(workspaceId: string, revision: number, terms: Readonly<Record<string, unknown>>): Promise<{ readonly line: string; readonly workspace: RatesWorkspaceView }>;
-  conventions(): Promise<readonly { readonly currency: string; readonly index: string; readonly profile: string }[]>;
+  /** `new <product> <terms>` (ADR-0008): the server reads the words against the product's description and creates one line. */
+  newLine(workspaceId: string, revision: number, product: string, terms: string): Promise<{ readonly line: string; readonly workspace: RatesWorkspaceView }>;
+  /** The products this app can create, as the server describes them. */
+  products(): Promise<readonly ProductDescriptor[]>;
+  /** Sets the workspace's defaults for new lines; a null clears one. */
+  changeDefaults(workspaceId: string, revision: number, defaults: RatesWorkspaceView['defaults']): Promise<RatesWorkspaceView>;
   removeLine(workspaceId: string, revision: number, line: string): Promise<RatesWorkspaceView>;
   editLine(workspaceId: string, revision: number, line: string, field: string, value: unknown): Promise<RatesWorkspaceView>;
   cashflows(workspaceId: string, line: string): Promise<CashflowsView>;
@@ -35,8 +40,9 @@ export const httpRatesApi: RatesApi = {
   create: (valuationDate) => post('/api/rates/workspaces', { valuationDate }),
   view: (workspaceId) => call(base(workspaceId)),
   addLine: (workspaceId, revision, product) => post(`${base(workspaceId)}/lines`, { revision, product }),
-  createLine: (workspaceId, revision, terms) => post(`${base(workspaceId)}/lines/terms`, { revision, terms }),
-  conventions: () => call('/api/rates/conventions'),
+  newLine: (workspaceId, revision, product, terms) => post(`${base(workspaceId)}/lines/new`, { revision, product, terms }),
+  products: () => call('/api/products?app=rates'),
+  changeDefaults: (workspaceId, revision, defaults) => post(`${base(workspaceId)}/defaults`, { revision, ...defaults }),
   removeLine: (workspaceId, revision, line) => post(`${base(workspaceId)}/lines/${encodeURIComponent(line)}/remove`, { revision }),
   editLine: (workspaceId, revision, line, field, value) => post(`${base(workspaceId)}/lines/${encodeURIComponent(line)}/edits`, { revision, field, value }),
   cashflows: (workspaceId, line) => call(`${base(workspaceId)}/lines/${encodeURIComponent(line)}/cashflows`),

@@ -2,7 +2,7 @@ import type { LineView, LiveFrame } from './contracts';
 import { hiddenEdits, lineColumns, lineHeaderGroups, lineResult, lineRows, parserOf } from './lines';
 
 const line = (name: string): LineView => ({
-  line: name, fields: {}, userFields: [], priceable: true, parLeg: 1, spot: null, profiles: [], issues: [], held: [],
+  line: name, fields: {}, userFields: [], priceable: true, parLeg: 1, spot: null, profiles: [], issues: [], held: [], defaulted: {},
 });
 
 const frame = (inputRevision: number): LiveFrame => ({
@@ -90,7 +90,9 @@ describe('a notional in millions (owner, 2026-11-04)', () => {
     expect(read('1000')).toEqual({ ok: true, value: 1e9 });
     expect(read('2.5')).toEqual({ ok: true, value: 2.5e6 });
     expect(read('3bn')).toEqual({ ok: true, value: 3e9 });
-    expect(read('500m')).toEqual({ ok: true, value: 5e8 });
+    expect(read('500mm')).toEqual({ ok: true, value: 5e8 });
+    // `m` is months (ADR-0008 §2), so it is not a scale.
+    expect(read('500m').ok).toBe(false);
     expect(read('')).toEqual({ ok: true, value: null });
   });
 

@@ -27,7 +27,8 @@ type Edit =
   | { readonly kind: 'cashflow'; readonly line: string; readonly period: string; readonly field: string; readonly value: unknown }
   | { readonly kind: 'resolve'; readonly held: HeldEdit; readonly resolution: Resolution }
   | { readonly kind: 'add'; readonly product: 'irs' | 'ccs' }
-  | { readonly kind: 'terms'; readonly terms: Readonly<Record<string, unknown>> }
+  | { readonly kind: 'new'; readonly product: string; readonly terms: string }
+  | { readonly kind: 'defaults'; readonly defaults: RatesWorkspaceView['defaults'] }
   | { readonly kind: 'remove'; readonly line: string };
 
 const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -50,7 +51,7 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
   const queryClient = useQueryClient();
   const view = useQuery({ queryKey: ['rates', workspaceId], queryFn: () => api.view(workspaceId) });
   const market = useQuery({ queryKey: ['rates', 'market'], queryFn: () => api.market(), refetchInterval: 2000 });
-  const conventions = useQuery({ queryKey: ['rates', 'conventions'], queryFn: () => api.conventions(), staleTime: Infinity });
+  const products = useQuery({ queryKey: ['products', 'rates'], queryFn: () => api.products(), staleTime: Infinity });
   const grid = useRef<ExGridApi<LineRow>>(null);
   const [expanded, setExpanded] = useState({ leg1: false, leg2: false });
   const [frame, setFrame] = useState<LiveFrame | undefined>(undefined);
@@ -67,14 +68,16 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
         case 'cashflow': return api.editCashflow(workspaceId, revision, edit.line, edit.period, edit.field, edit.value);
         case 'resolve': return api.resolve(workspaceId, revision, edit.held.scope, edit.held.entity, edit.held.field, edit.resolution);
         case 'add': return (await api.addLine(workspaceId, revision, edit.product)).workspace;
-        case 'terms': return (await api.createLine(workspaceId, revision, edit.terms)).workspace;
+        case 'new': return (await api.newLine(workspaceId, revision, edit.product, edit.terms)).workspace;
+        case 'defaults': return api.changeDefaults(workspaceId, revision, edit.defaults);
         case 'remove': return api.removeLine(workspaceId, revision, edit.line);
       }
     },
     (next) => { show(next); void queryClient.invalidateQueries({ queryKey: ['rates', workspaceId, 'cashflows'] }); },
     (edit, error) => {
-      workspace.notify(edit.kind === 'terms'
+      workspace.notify(edit.kind === 'new'
         ? `The line was not created: ${describe(error)}`
+        : edit.kind === 'defaults' ? `The defaults were not set: ${describe(error)}`
         : `${edit.kind === 'line' || edit.kind === 'cashflow' ? `${edit.line} ${edit.field}` : edit.kind} was not changed: ${describe(error)}`);
       void api.view(workspaceId).then((fresh) => { queue.rebase(fresh.revision); show(fresh); });
     }), [api, workspaceId, show, workspace, queryClient]);
@@ -212,7 +215,7 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
   };
 
   // The page's commands run the same functions as its buttons.
-  const current = { price, startLive, stopLive: () => stopLive(subscription), live: subscription !== undefined, capture, queue, conventions: conventions.data ?? [] };
+  const current = { price, startLive, stopLive: () => stopLive(subscription), live: subscription !== undefined, capture, queue, products: products.data ?? [] };
   const commands = useRef(current);
   commands.current = current;
   useEffect(() => {
@@ -228,12 +231,17 @@ export function RatesWorkspacePanel({ panelId, workspaceId, api }: { readonly pa
       },
       capture: () => void commands.current.capture(),
       addLine: (product) => void commands.current.queue.push({ kind: 'add', product }),
-      createLine: (terms) => void commands.current.queue.push({ kind: 'terms', terms }),
-      conventions: () => commands.current.conventions,
+      newLine: (product, terms) => void commands.current.queue.push({ kind: 'new', product, terms }),
+      setDefaults: (defaults) => {
+        const shown = queryClient.getQueryData<RatesWorkspaceView>(['rates', workspaceId])?.defaults;
+        if (shown === undefined) { workspace.notify('The workspace has not loaded; its defaults were not set.'); return; }
+        void commands.current.queue.push({ kind: 'defaults', defaults: { ...shown, ...defaults } });
+      },
+      products: () => commands.current.products,
     });
     registerGridFocus(panelId, () => grid.current?.focus());
     return () => { registerRatesCommands(panelId, undefined); registerGridFocus(panelId, undefined); };
-  }, [panelId, workspace]);
+  }, [panelId, workspace, queryClient, workspaceId]);
 
   if (view.isPending) return <Text c="dimmed">Loading workspace…</Text>;
   if (view.isError) return <Alert color="red" title="Workspace">{view.error.message}</Alert>;

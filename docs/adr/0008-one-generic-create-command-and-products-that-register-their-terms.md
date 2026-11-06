@@ -1,6 +1,7 @@
 # ADR-0008: One generic create command, and products that register their terms
 
-Status: PROPOSED 2026-11-04. Raised by the owner: "Do you think a user can give `new irs` seven arguments?" and
+Status: ACCEPTED 2026-11-06 by the owner, widened the same day (§7, §8) and scoped to describing IRS and CCS
+("irs/ccsを記述化するところまで"). Proposed 2026-11-04. Raised by the owner: "Do you think a user can give `new irs` seven arguments?" and
 "I want to separate the generic command for creating a trade from the specific ones for each product"
 (2026-11-04). Amends ADR-0005 §4 and ADR-0006's `new irs`; changes nothing a Run does.
 
@@ -26,10 +27,14 @@ third.
 2. **A product registers its terms.** A domain module registers each product it can create, against the workspace
    app it lives in (`rates.irs`, `rates.ccs`):
    - its **fields**, each with a **form** from a small generic set the kernel reads: `period` (`10y`, `3m`), `date`,
-     `amount` (`3bn`, `500m`), `percent` (`1.25%`), `code` (one of a list the module serves, such as currencies),
+     `amount` (`3bn`, `500mm`, `20k`; a bare number is in millions and a bare number of a million or more is refused
+     as a full amount typed out of habit, owner 2026-11-04; `m` is never millions, because `6m` is six months and the
+     two forms must never read the same word), `percent` (`1.25%`, or `5bp`), `code` (one of a list the module serves, such as currencies),
      `choice` (named words, such as `pay` and `rec`) and `flag`. A form says how a word is read, never what it means.
-   - which fields are **required**, and which are **positional only when ambiguous**. For example, an IRS's `end`
-     and a future `start` are both periods, so a second period is the end only when no `start=` is given.
+   - which fields are **required**, and which may be typed **without a name**. A field typed without a name is one
+     whose form no other such field shares (an IRS's `end` is its only unnamed period; its frequencies are named,
+     `fixed=12m`), or one of a **sequence**: fields of one form filled in the order declared (a CCS's two
+     currencies, leg 1 then leg 2).
    - its **default sources**, in order (§4).
    - its **resolver**, which judges whether the terms make a priceable line (today's `LineResolver`), and its
      **field mapping** onto the entity's flat fields (`leg1.notional`, `leg2.notional` from one `notional`).
@@ -56,6 +61,22 @@ third.
 6. **The server owns the reading.** The client reads words by form only to complete and to show the pending
    command. The server reads them again from the registration and decides (ADR-0003). A registration the client
    has not loaded leaves the command unavailable, never guessed.
+
+7. **A product is a description, not code (owner, 2026-11-06).** A product's fields, forms, required fields and
+   sequences are data: a `ProductDescriptor`. Descriptors come through a **catalog port** (`IProductCatalog`). In
+   this repository a module writes them; at the company the analytics engine publishes the products it supports and
+   their input schemas, and an adapter reads that catalog into descriptors without a kernel or UI change. What a
+   description cannot say stays with the product's module, behind a narrow interface: the defaults it supplies, the
+   mapping onto the entity's fields, and the **economic check** (today's `LineResolver`). A shape that matches a
+   schema is not proof that the terms make economic sense (CLAUDE.md), so the two checks stay apart.
+8. **Pricing is found by product.** A pricing provider declares the products, and their versions, it can price.
+   Price finds the provider for each line's product; a line whose product no provider prices is listed as not
+   priced with that reason, never priced by another provider and never by a mock (CLAUDE.md: no silent fallback).
+   A product may therefore be described, created and saved before anything prices it.
+
+Scope of the first implementation (owner, 2026-11-06): the kernel's descriptors, catalog port, word reader and
+generic create; IRS and CCS described by the Rates module; the provider declaring both. Loading the engine's catalog,
+and a generic leg-by-leg structure for products no description covers, are later work.
 
 ## Consequences
 

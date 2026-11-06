@@ -63,19 +63,20 @@ export const MILLION = 1e6;
 
 /**
  * Reads a notional as typed: a bare number is millions (`1000` is a billion), and `k`, `m` or `bn` after it says its
- * own scale (`3bn`, `500m`). A bare number of a million or more would be a trillion or more: almost surely a full
+ * own scale (`3bn`, `500mm`). A bare number of a million or more would be a trillion or more: almost surely a full
  * amount typed out of habit, so it is refused rather than taken as millions (spine 1).
  */
 export function parseNotional(text: string): number | undefined | 'fullAmount' {
-  const m = /^(.+?)\s*(k|m|bn)?$/i.exec(text.trim());
+  // `mm`, never `m`: `m` is months wherever words are read by form (ADR-0008 §2), so it is never millions here either.
+  const m = /^(.+?)\s*(k|mm|bn)?$/i.exec(text.trim());
   if (m === null) return undefined;
   const n = parseNumber(m[1]!);
   if (n === undefined || n <= 0) return undefined;
   if (m[2] === undefined) return n >= MILLION ? 'fullAmount' : n * MILLION;
-  return n * { k: 1e3, m: 1e6, bn: 1e9 }[m[2].toLowerCase() as 'k' | 'm' | 'bn'];
+  return n * { k: 1e3, mm: 1e6, bn: 1e9 }[m[2].toLowerCase() as 'k' | 'mm' | 'bn'];
 }
 
-const NOTIONAL_HELP = 'Type the notional in millions (1000 is a billion), or with its scale: 3bn, 500m.';
+const NOTIONAL_HELP = 'Type the notional in millions (1000 is a billion), or with its scale: 3bn, 500mm.';
 
 function notional(text: string): Parsed {
   if (empty(text)) return { ok: true, value: null };
@@ -347,7 +348,16 @@ export function lineCellMessage(row: LineRow, column: GridColumn<LineRow>): stri
   if (column.name.startsWith('leg') && row.view.profiles.length > 0 && (column.name.endsWith('.index') || column.name.endsWith('.currency')))
     return `Conventions: ${row.view.profiles.join(', ')}`;
   if (row.view.userFields.includes(column.name)) return 'Set by you.';
+  const source = row.view.defaulted[column.name];
+  if (source !== undefined) return `Default, from ${defaultSource(source)}.`;
   return undefined;
+}
+
+/** Where a default came from, in words (ADR-0008 §4): the workspace's own defaults, a convention profile's template, or a decision. */
+function defaultSource(source: string): string {
+  if (source === 'workspace') return 'the workspace defaults';
+  if (source.startsWith('profile:')) return `the convention profile ${source.slice('profile:'.length)}`;
+  return `decision ${source}`;
 }
 
 /** The figures of each line in a live frame, keyed by line. */

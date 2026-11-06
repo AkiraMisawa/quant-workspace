@@ -22,6 +22,8 @@ export interface LineView {
   readonly issues: readonly string[];
   /** Edits held back on the line or its cashflows, as `entity field: conflict|lost`. */
   readonly held: readonly string[];
+  /** The fields a default filled when the line was created, each with its source (`workspace`, `profile:…`, `C47`); a field the user set since is not listed (ADR-0008 §4). */
+  readonly defaulted: Readonly<Record<string, string>>;
 }
 
 export interface HeldEdit {
@@ -39,6 +41,8 @@ export interface RatesWorkspaceView {
   readonly workspaceId: string;
   readonly revision: number;
   readonly valuationDate: string;
+  /** The workspace's defaults for new lines, set by its user (ADR-0008 §4b); null where none is set. Notional is the full amount. */
+  readonly defaults: { readonly currency: string | null; readonly notional: number | null; readonly direction: string | null };
   readonly lines: readonly LineView[];
   readonly conflicts: readonly HeldEdit[];
   readonly lost: readonly HeldEdit[];

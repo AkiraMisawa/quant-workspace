@@ -106,7 +106,7 @@ test('C43, C39: a leg\'s second level opens and closes on request, and a line wi
   await expect(page.getByTestId('cashflows')).toContainText('generates no schedule');
 });
 
-test('ADR-0006: a line is made from the command line, its arguments completed from the configured conventions', async ({ page }) => {
+test('ADR-0008: a line is made from short words in any order, read against the product the server describes', async ({ page, problems }) => {
   await open(page);
   await newWorkspace(page);
   const line = page.getByRole('combobox', { name: 'Command' });
@@ -121,22 +121,19 @@ test('ADR-0006: a line is made from the command line, its arguments completed fr
   await page.keyboard.press('Tab');
   await expect(line).toHaveValue('new irs ');
 
-  // Each slot offers only what the server says a leg may name; Tab takes the value highlighted.
-  await expect(options.getByRole('option', { name: /^JPY/ })).toBeVisible();
-  await page.keyboard.type('JP');
+  // Each word is completed from the description: a currency the server's profiles name, taken with Tab.
+  await page.keyboard.type('jp');
+  await expect(options.getByRole('option').first()).toContainText('jpy');
   await page.keyboard.press('Tab');
-  await expect(options.getByRole('option').first()).toContainText('TONA');
-  await page.keyboard.press('Tab');
-  await expect(line).toHaveValue('new irs JPY TONA ');
+  await expect(line).toHaveValue('new irs jpy ');
 
-  // Enter with a slot still empty names what is missing and runs nothing.
-  await page.keyboard.type('10y 3bn pay');
-  await page.keyboard.press('Enter');
-  await expect(page.getByTestId('command-problems')).toHaveText('Missing: fixed-frequency, float-frequency.');
-
-  // No rate and no spread: an at-the-money swap (C47), the fixed leg solved at par.
-  await page.keyboard.type(' 12m 12m');
-  await expect(page.getByTestId('command-pending')).toContainText('pay12m12m');
+  // The rest in any order; the line shows how each word was read. The index and the frequencies come from the
+  // JPY profile's template and the quotes from C47 (at the money), so nothing more is typed.
+  await page.keyboard.type('3bn 10y rec');
+  const pending = page.getByTestId('command-pending');
+  await expect(pending).toContainText('notional 3bn');
+  await expect(pending).toContainText('end 10y');
+  await expect(pending).toContainText('direction rec');
   await page.keyboard.press('Enter');
   await expect(line).toBeHidden();
   await expect(page.getByTestId('workspace-summary')).toContainText('1 line(s)');
@@ -146,4 +143,15 @@ test('ADR-0006: a line is made from the command line, its arguments completed fr
   // A line that can be priced has no issues.
   await goTo(page, ISSUES);
   await expect(cell(page, ISSUES)).toHaveText('');
+
+  // What no default supplies is refused by name, and no line is made.
+  await page.getByRole('tab', { name: 'Rates 2026-10-27' }).focus();
+  await page.keyboard.press('/');
+  await expect(line).toBeFocused();
+  await page.keyboard.type('new irs 5y');
+  await page.keyboard.press('Enter');
+  await expect(page.getByText(/The line was not created: currency is missing/)).toBeVisible();
+  await expect(page.getByTestId('workspace-summary')).toContainText('1 line(s)');
+  // The refusal is the server's 422, which the browser reports; it is the one console message this test expects.
+  expect(problems.splice(0)).toEqual(['error: Failed to load resource: the server responded with a status of 422 (Unprocessable Entity)']);
 });

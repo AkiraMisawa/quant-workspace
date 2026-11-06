@@ -347,7 +347,16 @@ function Head({ command, reading }: { readonly command: Command; readonly readin
   return (
     <Group gap={6} wrap="wrap" data-testid="command-pending">
       <Text size="sm" fw={600} ff="monospace">{command.words}</Text>
-      {args.map((a) => {
+      {args.flatMap((a) => {
+        if (a.parts !== undefined) {
+          const typed = reading.kind === 'arguments' ? reading.given[a.name] ?? '' : '';
+          return a.parts(typed).map((p, i) => (
+            <Badge key={`${a.name}/${i}`} size="sm" radius="sm" variant={p.value === undefined ? 'outline' : 'light'}
+              color={p.name === '?' ? 'red' : p.value === undefined ? 'gray' : 'blue'} style={{ textTransform: 'none' }}>
+              {p.value === undefined ? p.name : p.name === '?' ? `? ${p.value}` : `${p.name} ${p.value}`}
+            </Badge>
+          ));
+        }
         const value = reading.kind === 'arguments' ? reading.given[a.name] ?? (reading.slot === a && reading.typed !== '' ? reading.typed : undefined) : undefined;
         const current = reading.kind === 'arguments' && reading.slot === a;
         return (

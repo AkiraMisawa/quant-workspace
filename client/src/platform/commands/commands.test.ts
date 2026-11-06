@@ -83,4 +83,14 @@ describe('completing arguments one slot at a time (ADR-0006 §4)', () => {
     if (reading.kind !== 'arguments') throw new Error('not chosen');
     expect(finish(reading)).toEqual({ args: { request: 'make a 10y swap  and tick it' } });
   });
+
+  it('reads a rest of words whole and completes only the word typed now (ADR-0008 §3)', () => {
+    const create = command('new swap', { args: [{ name: 'terms', required: true, rest: true, words: true, complete: () => [{ value: 'pay' }, { value: '10y' }] }] });
+    const reading = readLine('new swap 10y p', [create]);
+    if (reading.kind !== 'arguments') throw new Error('not chosen');
+    expect(reading.typed).toBe('p');
+    expect(completionsOf(reading, [create]).values.map((v) => v.value)).toEqual(['pay']);
+    expect(take('new swap 10y p', reading, { value: 'pay' })).toBe('new swap 10y pay ');
+    expect(finish(reading)).toEqual({ args: { terms: '10y p' } });
+  });
 });
